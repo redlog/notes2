@@ -9,6 +9,8 @@ from urllib.parse import quote, unquote
 from typing import Union
 
 import datetime
+import dateutil, dateutil.parser
+from dateutil.parser import ParserError
 import markdown
 import matplotlib
 import matplotlib.pyplot as plt
@@ -104,16 +106,32 @@ def list_notes() -> (str, int):
     nn: int = request.args.get('nn', cfg.get_num_notes_per_page(), int)
     sk: str = request.args.get('sk', ('search' if len(search) else 'timestamp'), str)
     so: str = request.args.get('so', 'desc', str)
+    time_min: str = request.args.get('time_min', "2000-01-01 00:00:00", str)
+    time_max: str = request.args.get('time_max', str(datetime.datetime.now())[:19], str)
 
     if len(search):
         search = unquote(search)
+
+    list_of_notes = idx.get_notes_search(search) if search else idx.get_notes()
 
     filter_list: list = []
     if len(filter_raw):
         filter_list = [unquote(_) for _ in re.split("[, +]", filter_raw) if len(_) > 0]
 
-    list_of_notes = idx.get_notes_search(search) if search else idx.get_notes()
-    list_of_notes = [d for d in list_of_notes if matches_filter(d, filter_list)]
+    try:
+        time_min_num = int(time.mktime(dateutil.parser.parse(time_min).timetuple()))
+    except (ValueError, ParserError):
+        time_min = "2000-01-01 00:00:00"
+        time_min_num = int(time.mktime(dateutil.parser.parse(time_min).timetuple()))
+
+    try:
+        time_max_num = int(time.mktime(dateutil.parser.parse(time_max).timetuple()))
+    except (ValueError, ParserError):
+        time_max = str(datetime.datetime.now())[:19]
+        time_max_num = int(time.mktime(dateutil.parser.parse(time_max).timetuple()))
+
+    list_of_notes = [d for d in list_of_notes
+                     if (time_min_num <= d.timestamp <= time_max_num) and matches_filter(d, filter_list)]
 
     # sort the list of notes
     fn = (lambda z: z.timestamp)  # default
@@ -177,7 +195,9 @@ def list_notes() -> (str, int):
          'notes_list': notes_list,
          'imgbytes': b64encode(imgbytes).decode(),
          'sk': sk,
-         'so': so
+         'so': so,
+         'time_min': time_min,
+         'time_max': time_max
          }
 
     return render_template('notes.html', **d), 200
@@ -210,7 +230,15 @@ def read_note(note_id: int) -> (str, int):
         img_refs = idx.list_note_images(note_id, cfg)
 
         # check note body of references to other notes, to tags, and to people
-        note_body_md = re.sub("note:([0123456789]+)", r'<a href="/note/\1">\1</a>', note_body_md)
+
+        note_refs = re.findall("note:([0123456789]+)", note_body_md)
+        for note_ref in note_refs:
+            # TODO: check to see if it's faster to read the file, or walk the list of notes in the index
+            note_ref_note, _ = Index.read_note_file(int(note_ref), cfg)
+            note_body_md = re.sub("note:{0}".format(note_ref),
+                                  "<a href=\"/note/{0}\">{1}</a>".format(note_ref, note_ref_note.title), note_body_md)
+
+        # tags and people
         note_body_md = re.sub("#([a-z_\\d]+)", r'<a href="/?filter=%23\1">#\1</a>', note_body_md)
         note_body_md = re.sub("@([a-z_\\d]+)", r'<a href="/?filter=%40\1">@\1</a>', note_body_md)
 

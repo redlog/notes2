@@ -46,25 +46,25 @@
 						<input name="sk" type="hidden" value="{{ sk }}" id="input_sk" />
 						<input name="so" type="hidden" value="{{ so }}" id="input_so" />
 
-						<table  class="header_table" ><!-- table to align form elements -->
+						<table class="header_table">
 							<tr>
-								<td>
-								<b>Search: </b>
-							</td><td>
-								<input name="search" id="input_search" size="50" type="text" value="{{ search_str }}">
-							</td>
+								<td><b>Search:</b></td>
+								<td><input name="search" id="input_search" size="50" type="text" value="{{ search_str }}"></td>
+								<td>&nbsp; &nbsp;</td>
+								<td><b>From:</b></td>
+								<td><input name="time_min" size="16" type="text" value="{{ time_min }}"></td>
+								<td>&nbsp; &nbsp;</td>
+								<td><input type="button" onclick="javascript:new_search();" value="Go"></td>
 							</tr>
+								<td><b>Filter:</b></td>
+								<td><input name="filter" size="50" type="text" value="{{ filter_str }}"></td>
+								<td></td>
+								<td><b>To:</b></td>
+								<td><input name="time_max" size="16" type="text" value="{{ time_max }}"></td>
+								<td></td>
+								<td></td>
 							<tr>
-								<td>
-								<b>Filter: </b>
-							</td><td>
-								<input name="filter" size="50" type="text" value="{{ filter_str }}">
-							</td>
-							</tr>
-							<tr>
-								<td colspan="2"><input type="button" onclick="javascript:new_search();" value="Go"></td>
-							</tr>
-						</table><!-- table to align form elements -->
+						</table>
 						</form> <!-- list form -->
 
 					</td>
@@ -152,7 +152,9 @@
 					<tr>
 						<td align="left">
 							{% if pg > 1 %}
-							<a href="javascript:go_to_page({{ pg - 1 }});">Prev</a>
+							<a href="javascript:go_to_page({{ pg - 1 }});">&lt; Prev</a>
+							{% else %}
+							&lt; Prev
 							{% endif %}
 						</td>
 						<td>
@@ -169,7 +171,9 @@
 						</td>
 						<td align="right">
 							{% if pg < n_pages %}
-							<a href="javascript:go_to_page({{ pg + 1 }});">Next</a>
+							<a href="javascript:go_to_page({{ pg + 1 }});">Next &gt;</a>
+							{% else %}
+							Next &gt;
 							{% endif %}
 						</td>
 					</tr>
@@ -185,11 +189,11 @@
 				</table><!-- navigation -->
 				<hr />
 
+				<div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
+
 				<div style="align:center; display: flex">
 				<img src="data:image/png;base64,{{ imgbytes }}" />
 				</div>
-
-				<!-- TODO: related tags -->
 
 				<!-- note text -->
 				{% for note in notes_list %}
@@ -214,6 +218,8 @@
 				<div class="msg_body">{{ note.note_body_md|safe }}<hr /></div>
 				<span class="comfortable"><p></p></span>
 				{% endfor %}
+
+				</div><!-- end of scrollable content div -->
 
 			</div><!-- end of content div -->
 

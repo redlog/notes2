@@ -10,6 +10,20 @@ function expand_messages() {
     }
 }
 
+function set_scrollable_content_div_height()
+{
+    var d = document.getElementById("scrollable_content_div");
+
+    var vh = window.innerHeight;
+    var top = d.getBoundingClientRect().top;
+    var currHeight = d.style.height;
+    var newHeight = vh - top - 30;
+    d.style.height = "" + newHeight + "px";
+    //alert("viewport height: " + vh);
+    //alert("top of box: " + top);
+    //alert("old height: " + currHeight + "   new height: " + newHeight);
+}
+
 function collapse_messages() {
     var messages = document.querySelectorAll(".msg_body");
     for (var i = 0; i < messages.length; i++) {
@@ -77,11 +91,28 @@ function text_area_listener(e)
         var start = this.selectionStart;
         var end = this.selectionEnd;
 
-        // set textarea value to: text before caret + tab + text after caret
-        this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+        // de-indent
+        if (e.shiftKey)
+        {
+            if (start >= 6 && this.value.substring(start - 6, start) == "    * ")
+            {
+                this.value = this.value.substring(0, start - 6) + "* " + this.value.substring(start);
+                this.selectionEnd = start - 4;
+            }
+            return;
+        }
 
-        // put caret at right position again
-        this.selectionStart = this.selectionEnd = start + 4;
+        // indent
+        if (start >= 2 && this.value.substring(start - 2, start) == "* ")
+        {
+            this.value = this.value.substring(0, start - 2) + "    " + this.value.substring(start - 2);
+            this.selectionEnd = start + 4;
+            return;
+        }
+
+        // default behavior: set textarea value to: text before caret + tab + text after caret
+        this.value = this.value.substring(0, start) + "    " + this.value.substring(end);
+        this.selectionStart = this.selectionEnd = start + 4;         // put caret at right position again
     }
 
     if (e.key == 'Backspace')
@@ -94,6 +125,37 @@ function text_area_listener(e)
             e.preventDefault();
             this.value = this.value.substring(0, start - 4) + this.value.substring(end);
             this.selectionStart = this.selectionEnd = start - 4;
+        }
+    }
+
+    if (e.key == 'Enter')
+    {
+        // figure out if the previous line was bulleted, and bullet this one the same way
+        var idx = this.selectionStart;
+        this.selectionEnd = idx; // don't respect the selection
+        var lidx = this.value.substring(0, idx).lastIndexOf('\n');
+        if (lidx > -1)
+        {
+            const regex = /^(?<indent>\s+\* )/
+            var currentLine = this.value.substring(lidx, idx);
+            var result = currentLine.match(regex);
+            if (result)
+            {
+                e.preventDefault();
+                var indent = result.groups["indent"];
+                if (currentLine.endsWith("* "))
+                {
+                    // make this line not bulleted
+                    this.value = this.value.substring(0, lidx) + "\n" + this.value.substring(idx);
+                    this.selectionStart = this.selectionEnd = lidx + 1;
+                }
+                else
+                {
+                    // match the previous line's indent
+                    this.value = this.value.substring(0, idx) + indent + this.value.substring(idx);
+                    this.selectionStart = this.selectionEnd = idx + indent.length;
+                }
+            }
         }
     }
 
@@ -114,6 +176,9 @@ function people_autocomplete_listener(e)
         var end = d.selectionEnd;
 
         var v = document.getElementById("people_autocomplete_text_field").value;
+        if (v.startsWith('@') == false) {
+            v = '@' + v
+        }
         d.value = d.value.substring(0, start) + v + " " + d.value.substring(end);
         d.selectionStart = d.selectionEnd = start + v.length + 1;
     }
@@ -131,6 +196,14 @@ function page_load(context)
     if (context == 'list')
     {
         display_compact();
+        set_scrollable_content_div_height();
+
+        window.addEventListener("resize",
+            function (e)
+            {
+                set_scrollable_content_div_height();
+            }
+        );
     }
 
     if (context == "edit")
@@ -144,16 +217,24 @@ function page_load(context)
 $( function() {
     $( "#people_autocomplete_text_field" ).autocomplete(
         {
-            source: availablePeople
+          source: function( request, response ) {
+            var matches = $.map( availablePeople, function(acItem) {
+              if ( acItem.toUpperCase().indexOf(request.term.toUpperCase()) != -1 ) {
+                return acItem;
+              }
+            });
+            response(matches);
+          }
         }
     );
 }
 );
 
+
 function show_people_autocomplete()
 {
     var d = document.getElementById("people_autocomplete_text_field");
-    d.value = "@";
+    d.value = "";
     l = d.value.length;
     d.setSelectionRange(l, l);
 
