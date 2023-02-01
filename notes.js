@@ -10,18 +10,15 @@ function expand_messages() {
     }
 }
 
-function set_scrollable_content_div_height()
+function set_scrollable_div_height(div_id)
 {
-    var d = document.getElementById("scrollable_content_div");
+    var d = document.getElementById(div_id);
 
     var vh = window.innerHeight;
     var top = d.getBoundingClientRect().top;
     var currHeight = d.style.height;
     var newHeight = vh - top - 30;
     d.style.height = "" + newHeight + "px";
-    //alert("viewport height: " + vh);
-    //alert("top of box: " + top);
-    //alert("old height: " + currHeight + "   new height: " + newHeight);
 }
 
 function collapse_messages() {
@@ -79,6 +76,19 @@ function image_edit_frame_show() {
 function image_edit_frame_hide() {
     var fr = document.getElementById("ul_image_div");
     fr.style.display = "none";
+}
+
+
+function show_tag_filter_span()
+{
+    var d = document.getElementById("tag_filter_span");
+    d.style.display="";
+}
+
+function show_people_filter_span()
+{
+    var d = document.getElementById("people_filter_span");
+    d.style.display="";
 }
 
 
@@ -196,14 +206,59 @@ function page_load(context)
     if (context == 'list')
     {
         display_compact();
-        set_scrollable_content_div_height();
+        set_scrollable_div_height('scrollable_tags_div');
+        set_scrollable_div_height('scrollable_people_div');
+        set_scrollable_div_height('scrollable_content_div');
 
         window.addEventListener("resize",
             function (e)
             {
-                set_scrollable_content_div_height();
+                set_scrollable_div_height('scrollable_tags_div');
+                set_scrollable_div_height('scrollable_people_div');
+                set_scrollable_div_height('scrollable_content_div');
             }
         );
+
+        document.getElementById("people_filter_text").addEventListener("input",
+            function()
+            {
+                var substring = document.getElementById("people_filter_text").value;
+                table_filter("all_people_table", substring);
+            }
+        );
+
+        document.getElementById("people_filter_text").addEventListener('keydown',
+            function (e) {
+                if (e.key == 'Escape')
+                {
+                    document.getElementById('people_filter_text').value = '';
+                    document.getElementById('people_filter_text').style.display = "none";
+                    table_filter("all_people_table", "");
+                }
+            }
+        );
+
+
+        document.getElementById("tag_filter_text").addEventListener("input",
+            function()
+            {
+                var substring = document.getElementById("tag_filter_text").value;
+                table_filter("all_tag_table", substring);
+            }
+        );
+
+        document.getElementById("tag_filter_text").addEventListener('keydown',
+            function (e) {
+                if (e.key == 'Escape')
+                {
+                    document.getElementById('tag_filter_text').value = '';
+                    document.getElementById('tag_filter_text').style.display = "none";
+                    table_filter("all_tag_table", "");
+                }
+            }
+        );
+
+        draw_date_histogram();
     }
 
     if (context == "edit")
@@ -259,6 +314,31 @@ function compare(v1, v2, recordkeeper)
     }
 }
 
+function table_filter(table_id, substring)
+{
+    var table = $('#' + table_id);
+    var ss = substring.toLowerCase();
+    $('#'+table_id + " tr").each(
+        function(i, row)
+        {
+            if (ss.length == 0)
+            {
+                row.style.display = '';
+                return;
+            }
+            var value = $('td:first', row).text().toLowerCase();
+            var result = value.indexOf(ss);
+            if (result > 0)
+            {
+                row.style.display = '';
+            }
+            else
+            {
+                row.style.display = 'none';
+            }
+        }
+    );
+}
 
 function table_sort(table_id, tbody_id, recordkeeper)
 {
@@ -320,3 +400,4 @@ function go_to_page(pg_num)
     v.value = pg_num;
     submit_list_form();
 }
+

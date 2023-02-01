@@ -16,6 +16,9 @@
 		<link rel="stylesheet" href="http://code.jquery.com/ui/1.13.1/themes/base/jquery-ui.css" />
 		<script src="https://code.jquery.com/jquery-3.6.0.js"></script>
 		<script src="https://code.jquery.com/ui/1.13.1/jquery-ui.js"></script>
+	    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/5.9.2/d3.js"></script>
+	    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-color/1.2.1/d3-color.js"></script>
+
 		<script language="javascript">
 				{% if context == 'edit' %}
 			    var availablePeople = {{ people_list|tojson }};
@@ -87,11 +90,16 @@
 			<div style="flex-grow: 0; background-color: #c0c0c0; padding: 12px;" name="tags_div" id="tags_div">
 			<b>All Tags</b>
 				<br />
-				<span style="font-size: small"><a href="javascript:table_sort('all_tag_table', 'all_tag_tbody', 'name_order');">abc</a></span>
-				<span style="font-size: small">|</span>
-				<span style="font-size: small"><a href="javascript:table_sort('all_tag_table', 'all_tag_tbody', 'count_order');">123</a></span>
-				<span style="font-size: small"><hr /></span>
-				<div id="all_tag_table_wrapper">
+				<span style="font-size: small">
+					<a href="javascript:table_sort('all_tag_table', 'all_tag_tbody', 'name_order');">abc</a>
+					|
+					<a href="javascript:table_sort('all_tag_table', 'all_tag_tbody', 'count_order');">123</a>
+					|
+					<a href="javascript:show_tag_filter_span();">filter</a>
+					<span id="tag_filter_span" style="display:none"><br><input type="text" size="10" id="tag_filter_text" name="tag_filter_text" /></span>
+					<hr />
+				</span>
+				<div id="scrollable_tags_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
 				<table id="all_tag_table" class="counter_table">
 					<tbody id="all_tag_tbody">
 				{% for tag_quot, tag, ct in all_tags %}
@@ -101,18 +109,23 @@
 				</table>
 				<input type="hidden" id="all_tag_table_name_order" value="asc">
 				<input type="hidden" id="all_tag_table_count_order" value="desc">
-				</div><!-- all tag table div -->
+				</div><!-- scrollable tag  div -->
 			</div>
 
 			<!-- people div -->
 			<div style="flex-grow: 0; background-color: #c0c0c0; padding: 12px;" name="people_div" id="people_div">
 			<b>All People</b>
 				<br />
-				<span style="font-size: small"><a href="javascript:table_sort('all_people_table', 'all_people_tbody', 'name_order');">abc</a></span>
-				<span style="font-size: small">|</span>
-				<span style="font-size: small"><a href="javascript:table_sort('all_people_table', 'all_people_tbody', 'count_order');">123</a></span>
-				<span style="font-size: small"><hr /></span>
-				<div id="all_people_table_wrapper">
+				<span style="font-size: small">
+					<a href="javascript:table_sort('all_people_table', 'all_people_tbody', 'name_order');">abc</a>
+					|
+					<a href="javascript:table_sort('all_people_table', 'all_people_tbody', 'count_order');">123</a>
+					|
+					<a href="javascript:show_people_filter_span();">filter</a>
+					<span id="people_filter_span" style="display:none"><br><input type="text" size="10" id="people_filter_text" name="people_filter_text" /></span>
+					<hr />
+				</span>
+				<div id="scrollable_people_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
 				<table id="all_people_table" class="counter_table">
 						<tbody id="all_people_tbody">
 				{% for p_quot, p, ct in all_people %}
@@ -122,7 +135,7 @@
 				</table>
 				<input type="hidden" id="all_people_table_name_order" value="asc">
 				<input type="hidden" id="all_people_table_count_order" value="desc">
-				</div><!-- all tag table div -->
+				</div><!-- scrollable people div -->
 			</div>
 
 			<!-- content div -->
@@ -191,9 +204,12 @@
 
 				<div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
 
-				<div style="align:center; display: flex">
-				<img src="data:image/png;base64,{{ imgbytes }}" />
-				</div>
+				<svg style="width: 80%; height: {{ 140 * n_years }}px" id="date_histogram_svg" name="date_histogram_svg"></svg>
+				<script>
+				const date_histogram_data = {{ date_histogram|tojson }};
+				</script>
+				<script src="{{ url_for('static', filename = 'date_histogram.js') }}" language="javascript"></script>
+				<hr />
 
 				<!-- note text -->
 				{% for note in notes_list %}

@@ -12,11 +12,7 @@ import datetime
 import dateutil, dateutil.parser
 from dateutil.parser import ParserError
 import markdown
-import matplotlib
-import matplotlib.pyplot as plt
-from base64 import b64encode
 import re
-from io import BytesIO
 from operator import itemgetter
 from collections import Counter
 
@@ -29,10 +25,15 @@ cfg: Config = None
 idx: Index = None
 
 
-def make_date_histogram(note_list: list[Note], color: str) -> BytesIO:
+def make_date_histogram(note_list: list[Note], color: str) -> list[dict]:
     # grab the dates so we can make a histogram
     dates = [datetime.datetime.fromtimestamp(note.timestamp) for note in note_list]
-    dates = Counter([datetime.date(dttm.year, dttm.month, dttm.day) for dttm in dates])  # e.g. "2022-04-01"
+
+    # show no more than 2 calendar years
+    previous_year = datetime.datetime.now().year - 1
+    first_day_to_show = datetime.datetime(previous_year, 1, 1)
+
+    dates = Counter([datetime.date(dttm.year, dttm.month, dttm.day) for dttm in dates if dttm >= first_day_to_show])  # e.g. "2022-04-01"
     today = datetime.date.today()
     if len(dates) == 0:  # starting from scratch
         dates[today] = 0
@@ -45,22 +46,10 @@ def make_date_histogram(note_list: list[Note], color: str) -> BytesIO:
             dates[m] = 0
         m += datetime.timedelta(days=1)
 
-    dates = [(dt, dates[dt]) for dt in dates]
-    dates.sort()
+    dates = [{'Date': str(dt)[:10], 'NoteCount': dates[dt]} for dt in dates]
+    dates.sort(key=(lambda d: d['Date']))
 
-    matplotlib.rc('xtick', labelsize=8)
-    matplotlib.rc('ytick', labelsize=8)
-    plt.figure(figsize=(8, 2), dpi=100)
-    plt.bar(list(range(len(dates))), list(map(itemgetter(1), dates)),
-            tick_label=list(map(itemgetter(0), dates)), color=color)
-    imgbytes = BytesIO()
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.savefig(imgbytes, format='png')
-    imgbytes.seek(0)
-    imgbytes = imgbytes.getvalue()
-    plt.close()
-    return imgbytes
+    return dates
 
 
 def matches_filter(note: Note, filter_list: list[str]):
@@ -71,7 +60,11 @@ def matches_filter(note: Note, filter_list: list[str]):
     matched = [False for _ in range(len(filter_list))]
 
     for i, f in enumerate(filter_list):
-        matched[i] = ((f in note.tags) or (f in note.people))
+        if f[0] == '~':
+            f2 = f[1:]
+            matched[i] = ((f2 not in note.tags) and (f2 not in note.people))
+        else:
+            matched[i] = ((f in note.tags) or (f in note.people))
 
     return set(matched) == {True}
 
@@ -116,7 +109,8 @@ def list_notes() -> (str, int):
 
     filter_list: list = []
     if len(filter_raw):
-        filter_list = [unquote(_) for _ in re.split("[, +]", filter_raw) if len(_) > 0]
+        filter_list = [unquote(s) for s in re.split("[, +]", filter_raw)
+        if ((len(s) > 1) and (s[0] in ['@', '#'])) or ((len(s) > 2) and (s[0] == '~') and (s[1] in ['@', '#']))]
 
     try:
         time_min_num = int(time.mktime(dateutil.parser.parse(time_min).timetuple()))
@@ -139,6 +133,8 @@ def list_notes() -> (str, int):
         fn = (lambda z: z.score)
 
     list_of_notes.sort(key=fn, reverse=(so == 'desc'))
+    date_histogram = make_date_histogram(list_of_notes, cfg.get_focal_color())
+    n_years = len(set([d['Date'][:4] for d in date_histogram]))
 
     # paginate
     total_notes = len(list_of_notes)
@@ -153,8 +149,6 @@ def list_notes() -> (str, int):
 
     # sort people by name
     all_people.sort(key=itemgetter(0))
-
-    imgbytes = make_date_histogram(note_subset, cfg.get_focal_color())
 
     notes_list = []
     for n in note_subset:
@@ -193,7 +187,8 @@ def list_notes() -> (str, int):
          'pg': pg, 'nn': nn, 'total_notes': total_notes,
          'search_str': search, 'filter_str': ', '.join(filter_list),
          'notes_list': notes_list,
-         'imgbytes': b64encode(imgbytes).decode(),
+         'date_histogram': date_histogram,
+         'n_years': n_years,
          'sk': sk,
          'so': so,
          'time_min': time_min,
