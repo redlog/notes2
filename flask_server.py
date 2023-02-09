@@ -90,6 +90,44 @@ def get_bounds(num_elements: int, page_num: int, elem_per_page: int) -> (int, in
     return first_element, last_element, num_pages
 
 
+@app.route('/tagline/<tag>')
+def list_taglines(tag: str) -> (str, int):
+
+    list_of_notes = [note for note in idx.get_notes() if matches_filter(note, [tag])]
+
+    # what we want to show is
+    # tagline | date | link to note
+
+    tagline_list = []
+    for note in list_of_notes:
+        nl = {
+            'title': note.title,
+            'timestamp': note.timestamp,
+            'dttm_str': str(datetime.datetime.fromtimestamp(note.timestamp))[:10],
+            'taglines': [],
+        }
+        _, body = Index.read_note_file(note.timestamp, cfg, parse=False)
+        taglines = Note.get_taglines(body, tag)
+        for tl in taglines:
+            nl['taglines'].append(markdown.markdown(tl))
+        if len(nl['taglines']):
+            tagline_list.append(nl);
+
+    all_tags = [(quote(t[0]), t[0], t[1]) for t in idx.get_tags()]
+    all_people = [(quote(p[0]), p[0], p[1]) for p in idx.get_people()]
+
+    d = {
+        'context': 'tagline',
+        'all_tags': all_tags, 'all_people': all_people,
+        'tag': tag,
+        'tag_quot': quote(tag),
+        'tagline_list': tagline_list,
+        'page_title': "Taglines for " + tag,
+        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
+    }
+    return render_template('notes.html', **d), 200
+
+
 @app.route('/', methods=['GET'])
 def list_notes() -> (str, int):
 
@@ -152,8 +190,8 @@ def list_notes() -> (str, int):
 
     notes_list = []
     for n in note_subset:
-        _, note_body = Index.read_note_file(n.timestamp, cfg)
-        note_body_md = markdown.markdown(note_body, extensions=['tables', 'attr_list'])
+        _, note_body = Index.read_note_file(n.timestamp, cfg, parse=False)
+        note_body_md = apply_markdown_and_links(note_body, n.timestamp)
 
         # highlighting search results is imperfect.  It is looking for the tokens in the search query, so we
         # can't highlight the actual trigrams that we're indexing on when trigram search, and since it uses
@@ -205,6 +243,25 @@ def read_image(note_id: int, img_num: int) -> (str, int):
     return send_file(filename, mimetype='image/png')
 
 
+def apply_markdown_and_links(note_body: str, note_id: int) -> str:
+
+    note_body_md = markdown.markdown(note_body, extensions=['tables', 'attr_list'])
+
+    # check note body of references to other notes, to tags, and to people
+    note_refs = re.findall("note:([0123456789]+)", note_body_md)
+    for note_ref in note_refs:
+        # TODO: check to see if it's faster to read the file, or walk the list of notes in the index
+        note_ref_note, _ = Index.read_note_file(int(note_ref), cfg)
+        note_body_md = re.sub("note:{0}".format(note_ref),
+                              "<a href=\"/note/{0}\">{1}</a>".format(note_ref, note_ref_note.title), note_body_md)
+
+    # tags and people
+    note_body_md = re.sub("#([a-z_\\d]+)", r'<a href="/?filter=%23\1">#\1</a>', note_body_md)
+    note_body_md = re.sub("@([a-z_\\d]+)", r'<a href="/?filter=%40\1">@\1</a>', note_body_md)
+
+    return note_body_md
+
+
 @app.route('/note/<int:note_id>', methods=['GET'])
 def read_note(note_id: int) -> (str, int):
 
@@ -219,23 +276,10 @@ def read_note(note_id: int) -> (str, int):
             s = "<a href=\"{0}\" target=\"_new\"><img style=\"max-height:100px; max-width: 100%\" src=\"{0}\"></a>".format(u)
             note_body = re.sub("<{0}>".format(image_num), s, note_body)
 
-        note_body_md = markdown.markdown(note_body, extensions=['tables', 'attr_list'])
-
         # if any images exist, put them at the bottom
         img_refs = idx.list_note_images(note_id, cfg)
 
-        # check note body of references to other notes, to tags, and to people
-
-        note_refs = re.findall("note:([0123456789]+)", note_body_md)
-        for note_ref in note_refs:
-            # TODO: check to see if it's faster to read the file, or walk the list of notes in the index
-            note_ref_note, _ = Index.read_note_file(int(note_ref), cfg)
-            note_body_md = re.sub("note:{0}".format(note_ref),
-                                  "<a href=\"/note/{0}\">{1}</a>".format(note_ref, note_ref_note.title), note_body_md)
-
-        # tags and people
-        note_body_md = re.sub("#([a-z_\\d]+)", r'<a href="/?filter=%23\1">#\1</a>', note_body_md)
-        note_body_md = re.sub("@([a-z_\\d]+)", r'<a href="/?filter=%40\1">@\1</a>', note_body_md)
+        note_body_md = apply_markdown_and_links(note_body, note_id)
 
     except FileNotFoundError:
         return "<html><body>File not found: {0}</body></html>".format(note_id), 404

@@ -202,41 +202,50 @@ class Index(object):
         return img_dir_path, filename
 
     @staticmethod
-    def read_note_file(timestamp: int, cfg: Config) -> (Note, str):
+    def read_note_file(timestamp: int, cfg: Config, parse=True) -> (Note, str):
         path = Index.get_path_from_timestamp(timestamp, cfg)
         fn = os.path.join(path, "{0}.md".format(timestamp))
         with open(fn, 'r') as fp:
             b = fp.read()
 
-        tags = re.search("<!-- tags: (.*) -->", b)
-        people = re.search("<!-- attendees: (.*) -->", b)
-
-        if tags is not None:
-            tags = set([t.lower() for t in tags.group(1).strip().split() if t.startswith('#')])
-        else:
-            tags = set()
-
-        if people is not None:
-            people = set([p.lower() for p in people.group(1).strip().split() if p.startswith('@')])
-        else:
-            people = set()
-
-        title = '(untitled)'
-        for line in b.split('\n'):
-            if line.startswith('# '):
-                title = line[2:]
-                break
-
-        # include tags inside the text
-        other_tags = map((lambda s: s.lower()), re.findall("#\w+", b))
-        tags.update(other_tags)
-
-        # TODO: figure out what to do with people mentioned in the text, but not attendees
-        # people.update(re.findall("@\w+", b))
-
         ts = int(os.path.split(fn)[-1][:-3])
 
-        n = Note(sorted(tags), sorted(people), title, ts)
+        tags = None
+        people = None
+        title = None
+
+        if parse:
+
+            tags = re.search("<!-- tags: (.*) -->", b)
+            people = re.search("<!-- attendees: (.*) -->", b)
+
+            if tags is not None:
+                tags = set([t.lower() for t in tags.group(1).strip().split() if t.startswith('#')])
+            else:
+                tags = set()
+
+            if people is not None:
+                people = set([p.lower() for p in people.group(1).strip().split() if p.startswith('@')])
+            else:
+                people = set()
+
+            title = '(untitled)'
+            for line in b.split('\n'):
+                if line.startswith('# '):
+                    title = line[2:]
+                    break
+
+            # include tags inside the text
+            other_tags = map((lambda s: s.lower()), re.findall("#\w+", b))
+            tags.update(other_tags)
+
+            # TODO: figure out what to do with people mentioned in the text, but not attendees
+            # people.update(re.findall("@\w+", b))
+
+            tags = sorted(tags)
+            people = sorted(people)
+
+        n = Note(tags, people, title, ts)
         return n, b
 
     def add_note_to_index(self, note: Note, save=True, add_to_search_index=True) -> None:
@@ -252,7 +261,7 @@ class Index(object):
         # search index
         if add_to_search_index:
             tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
-            _, body = self.read_note_file(note.timestamp, self.cfg)
+            _, body = self.read_note_file(note.timestamp, self.cfg, parse=False)
             words = self.body_to_words(body)
             if self.cfg.INDEX_TRIGRAMS:
                 words += Index.words_to_trigrams(words)
@@ -290,7 +299,7 @@ class Index(object):
 
             # remove doc from search index
             tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
-            _, body = self.read_note_file(note.timestamp, self.cfg)
+            _, body = self.read_note_file(note.timestamp, self.cfg, parse=False)
             words = self.body_to_words(body)
             if self.cfg.INDEX_TRIGRAMS:
                 words += Index.words_to_trigrams(words)
@@ -343,7 +352,6 @@ class Index(object):
         dir_ = os.path.join(path, str(timestamp))
         if os.path.exists(dir_):
             os.rmdir(dir_)
-
 
     @staticmethod
     def save_note_file(timestamp: int, text: str, cfg: Config) -> None:

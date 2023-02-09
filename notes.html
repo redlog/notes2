@@ -55,15 +55,15 @@
 								<td><input name="search" id="input_search" size="50" type="text" value="{{ search_str }}"></td>
 								<td>&nbsp; &nbsp;</td>
 								<td><b>From:</b></td>
-								<td><input name="time_min" size="16" type="text" value="{{ time_min }}"></td>
+								<td><input name="time_min" id="input_time_min" size="16" type="text" value="{{ time_min }}"></td>
 								<td>&nbsp; &nbsp;</td>
 								<td><input type="button" onclick="javascript:new_search();" value="Go"></td>
 							</tr>
 								<td><b>Filter:</b></td>
-								<td><input name="filter" size="50" type="text" value="{{ filter_str }}"></td>
+								<td><input name="filter" id="input_filter" size="50" type="text" value="{{ filter_str }}"></td>
 								<td></td>
 								<td><b>To:</b></td>
-								<td><input name="time_max" size="16" type="text" value="{{ time_max }}"></td>
+								<td><input name="time_max" id="input_time_max" size="16" type="text" value="{{ time_max }}"></td>
 								<td></td>
 								<td></td>
 							<tr>
@@ -82,9 +82,8 @@
 
 		<div><!-- main div -->
 
-			{% if context == 'list' %}
-
-			<div style="display: flex;" id="list_div" name="list_div"><!-- list div -->
+			{% if context == 'list' or context == 'tagline' %}
+			<div style="display: flex;"><!-- for list / taglines -->
 
 			<!-- tags div -->
 			<div style="flex-grow: 0; background-color: #c0c0c0; padding: 12px;" name="tags_div" id="tags_div">
@@ -103,7 +102,7 @@
 				<table id="all_tag_table" class="counter_table">
 					<tbody id="all_tag_tbody">
 				{% for tag_quot, tag, ct in all_tags %}
-					<tr><td><a href="/?filter={{ tag_quot }}">{{ tag }}</a></td><td>{{ ct }}</td></tr>
+					<tr onmouseover="show_tl('{{ tag_quot }}');" onmouseout="hide_tl('{{ tag_quot }}');"><td><a href="/?filter={{ tag_quot }}">{{ tag }}</a><span style="visibility:hidden" id="tag_tl_span_{{ tag_quot }}"> &nbsp; <a href="/tagline/{{ tag_quot }}">TL</a></span></td><td>{{ ct }}</td></tr>
 				{% endfor %}
 					</tbody>
 				</table>
@@ -138,8 +137,12 @@
 				</div><!-- scrollable people div -->
 			</div>
 
+			{% endif %} <!-- end of context is list or tagline -->
+
+			{% if context == 'list' %}
+
 			<!-- content div -->
-			<div style="flex-grow: 1; padding: 12px;" name="content_div" id="content_div">
+			<div style="flex-grow: 1; padding: 12px;" name="list_div" id="list_div">
 
 				<!-- navigation table -->
 				<table  class="header_table"  width="100%">
@@ -237,11 +240,35 @@
 
 				</div><!-- end of scrollable content div -->
 
-			</div><!-- end of content div -->
-
-			</div><!-- list div -->
+			</div><!-- end of list div -->
 
 			{% endif %}  <!-- context = list -->
+
+
+			{% if context == 'tagline' %}
+			<div style="flex-grow: 1; padding: 12px;" name="tagline_div" id="tagline_div">
+				<div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
+
+					<p><b>Taglines for tag <a style="color: {{ link_color }}" href="/?filter={{ tag_quot }}">{{ tag }}</a></b></p>
+					{% for note in tagline_list %}
+					<p>
+						<b><a style="color: {{ focal_color }}" href="/note/{{ note.timestamp }}">{{ note.title }}</a></b>
+						<br />
+						<span style="font-size: smaller">{{ note.dttm_str }}</span>
+						<ul>
+						{% for tagline in note.taglines %}
+							<li>{{ tagline|safe }}</li>
+						{% endfor %}
+						</ul>
+					</p>
+					{% endfor %}
+				</div><!-- scrollable_content_div -->
+			</div><!-- tagline_div -->
+			{% endif %}  <!-- context = tagline -->
+
+			{% if context == 'list' or context == 'tagline' %}
+				</div><!-- for list / taglines -->
+			{% endif %}
 
 			{% if context == 'read' %}
 
@@ -278,7 +305,7 @@
 			<br style="clear: both;" />
 			<hr />
 
-			<div style="display: flex">
+			<div id="flex_div" style="display: flex">
 
 			<div style="flex-grow: 1; padding: 12px" name="read_text_div" id="read_text_div">
 			{{ note_body_md|safe }}
@@ -300,18 +327,15 @@
 
 			</div>
 
-				</div><!-- flex -->
+				</div><!-- flex_div -->
 			<hr />
-
-
-
 
 
 			{% endif %} <!-- context = read -->
 
 			{% if context == 'edit' %}
 
-			<div style="display:flex">
+			<div id="edit_flex" style="display:flex">
 
 				<div id="people_autocomplete_div" style="display:none">
 					<div style="background-color:#dddddd;padding:8px">
@@ -344,7 +368,7 @@
 					<iframe style="height: 80vh" src="/image_edit_list/{{ id }}" title=""></iframe>
 				</div>
 
-				</div><!-- flex -->
+			</div><!-- edit flex -->
 
 			{% endif %} <!-- context = edit -->
 

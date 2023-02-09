@@ -83,14 +83,25 @@ function show_tag_filter_span()
 {
     var d = document.getElementById("tag_filter_span");
     d.style.display="";
+    document.getElementById("tag_filter_text").focus();
 }
 
 function show_people_filter_span()
 {
     var d = document.getElementById("people_filter_span");
     d.style.display="";
+    document.getElementById("people_filter_text").focus();
 }
 
+function show_tl(tag_quot)
+{
+    document.getElementById("tag_tl_span_" + tag_quot).style.visibility = "";
+}
+
+function hide_tl(tag_quot)
+{
+    document.getElementById("tag_tl_span_" + tag_quot).style.visibility = "hidden";
+}
 
 // adapted from: https://stackoverflow.com/questions/6637341/use-tab-to-indent-in-textarea
 function text_area_listener(e)
@@ -203,7 +214,12 @@ function people_autocomplete_listener(e)
 
 function page_load(context)
 {
-    if (context == 'list')
+    document.getElementById("input_search").addEventListener("keydown", form_submitter);
+    document.getElementById("input_filter").addEventListener("keydown", form_submitter);
+    document.getElementById("input_time_min").addEventListener("keydown", form_submitter);
+    document.getElementById("input_time_max").addEventListener("keydown", form_submitter);
+
+    if (context == 'list' || context == 'tagline')
     {
         display_compact();
         set_scrollable_div_height('scrollable_tags_div');
@@ -232,12 +248,11 @@ function page_load(context)
                 if (e.key == 'Escape')
                 {
                     document.getElementById('people_filter_text').value = '';
-                    document.getElementById('people_filter_text').style.display = "none";
+                    document.getElementById('people_filter_span').style.display = "none";
                     table_filter("all_people_table", "");
                 }
             }
         );
-
 
         document.getElementById("tag_filter_text").addEventListener("input",
             function()
@@ -252,12 +267,16 @@ function page_load(context)
                 if (e.key == 'Escape')
                 {
                     document.getElementById('tag_filter_text').value = '';
-                    document.getElementById('tag_filter_text').style.display = "none";
+                    document.getElementById('tag_filter_span').style.display = "none";
                     table_filter("all_tag_table", "");
                 }
             }
         );
+        document.getElementById("input_search").focus();
+    }
 
+    if (context == 'list')
+    {
         draw_date_histogram();
     }
 
@@ -266,6 +285,14 @@ function page_load(context)
         document.getElementById('big_text').addEventListener('keydown', text_area_listener);
         document.getElementById('people_autocomplete_text_field').addEventListener('keyup',
             people_autocomplete_listener);
+    }
+}
+
+function form_submitter(e)
+{
+    if (e.key == 'Enter')
+    {
+        document.getElementById("list_form").submit();
     }
 }
 

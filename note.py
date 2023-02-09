@@ -23,5 +23,9 @@ class Note(object):
         fn = os.path.join(path, "{0}.md".format(self.timestamp))
         return fn
 
+    @staticmethod
+    def get_taglines(body: str, tag: str) -> list[str]:
+        return [line.strip() for line in body.split('\n') if line.strip().find(tag) > -1]
+
     def __str__(self):
         return "{0}: {1} ({2}, {3})".format(self.timestamp, self.title, ', '.join(self.tags), ', '.join(self.people))
