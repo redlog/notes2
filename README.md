@@ -38,6 +38,8 @@ Combining filtering by tags, people and time range with full-text search, and I 
 
 However, the easiest way to find something is full-text search.  The search capability is fairly rudimentary; it's just a tfidf index.  As noted earlier, the index file is just a json blob.  For really heavy use over a long time, this might get unwieldy and something like sqlite might be better.  This would maintain the principle of "everything must be local" but violate the principle of "everything has to be ascii".
 
+Ok, one last feature-creep.  I mentioned earlier about tagging things `#todo` to come back to later.  Sometimes I don't want to see what _notes_ are marked to do, but rather what _line items_ in notes are to-do's.  So I've introduced the concept of **taglines**.  Choose `TL` for tag in the All Tags list, and see which lines in each note are marked with the tag.  Great for to-do's, but also finding things I'm `#waiting` for, or `#article`s that are `#toread`.
+
 ## Conclusion
 
 That's it.  I hope Notes can help others achieve the effectivess that it has helped me to achieve.  Feedback is welcome, as are feature suggestsions or even pull requests.

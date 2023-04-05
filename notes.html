@@ -2,13 +2,12 @@
 <html>
 	<head>
 		<title>
-			{% if context == 'edit' %}
-			Editing
-			{% else %}
-			Notes
-			{% endif %}
+			Localnotes
 			{% if page_title|length > 0 %}
 			:
+			{% endif %}
+			{% if context == 'edit' %}
+			Editing
 			{% endif %}
 			{{ page_title }}
 		</title>
@@ -27,20 +26,31 @@
 				{% endif %}
 		</script>
 		<script src="{{ url_for('static', filename = 'notes.js') }}" language="javascript"></script>
+
+
+		<script>
+  		$( function() { $( "#input_time_min" ).datepicker( { dateFormat: "yy-mm-dd" } ); } );
+  		$( function() { $( "#input_time_max" ).datepicker( { dateFormat: "yy-mm-dd" } ); } );
+  		</script>
+
+
 		<style>
 			a { color: {{ link_color }} }
 			.alert { color: {{ alert_color }} }
 			.focal { color: {{ focal_color }} }
+			p, span, div, font {
+				color: {{ text_color }}
+			}
 		</style>
 	</head>
 
-	<body onload="javascript:page_load('{{ context }}')">
+	<body style="background-color: {{ background_color }};" onload="javascript:page_load('{{ context }}')">
 
 		<!-- header bar -->
-		<div style="background-color: #dddddd; padding: 12px" id="header_div" name="header_div">
+		<div style="background-color: {{ header_color }}; padding: 12px" id="header_div" name="header_div">
 			<table class="header_table" style="width: 100%">
 				<tr>
-					<td style="width: 20%"><b><a href="/">Notes</a></b></td>
+					<td style="width: 20%"><b><a href="/">Localnotes</a></b></td>
 					<td style="width: 60%" align="center">
 						<!-- TODO: make this table divs so the form doesn't complain -->
 						<form name="list_form" id="list_form" action="/" method="GET">
@@ -74,7 +84,8 @@
 					<td align="right" style="width: 20%">
 						<a href="/new">new note</a> |
 						<a href="/reindex">reindex</a> |
-						<a href="/exit">exit</a>
+						<a href="/config">config</a> |
+						<a href="http://redlog.net/localnotes/" taget="_new">about</a>
 					</td>
 				</tr>
 			</table>
@@ -86,7 +97,7 @@
 			<div style="display: flex;"><!-- for list / taglines -->
 
 			<!-- tags div -->
-			<div style="flex-grow: 0; background-color: #c0c0c0; padding: 12px;" name="tags_div" id="tags_div">
+			<div style="flex-grow: 0; background-color: {{ sidebar_color }}; padding: 12px;" name="tags_div" id="tags_div">
 			<b>All Tags</b>
 				<br />
 				<span style="font-size: small">
@@ -112,7 +123,7 @@
 			</div>
 
 			<!-- people div -->
-			<div style="flex-grow: 0; background-color: #c0c0c0; padding: 12px;" name="people_div" id="people_div">
+			<div style="flex-grow: 0; background-color: {{ sidebar_color }}; padding: 12px;" name="people_div" id="people_div">
 			<b>All People</b>
 				<br />
 				<span style="font-size: small">
@@ -149,7 +160,11 @@
 					<tr>
 						<td colspan="3">
         				<div class="focal" style="text-align: center; font-size: small; text-decoration: italic">
-							Showing notes {{ min_note + 1 }}-{{ max_note + 1 }} of {{ total_notes }}
+							{% if total_notes == 0 %}
+								(no notes)
+							{% else %}
+								Showing notes {{ min_note + 1 }}-{{ max_note + 1 }} of {{ total_notes }}
+							{% endif %}
 						</div>
 						{% if filter_str|length > 0 %}
         				<div class="alert" style="text-align: center; font-size: small; text-decoration: italic">
@@ -253,6 +268,10 @@
 					{% for note in tagline_list %}
 					<p>
 						<b><a style="color: {{ focal_color }}" href="/note/{{ note.timestamp }}">{{ note.title }}</a></b>
+
+						<br />
+						[ <a href="/edit/{{ note.timestamp }}">edit</a> ]
+
 						<br />
 						<span style="font-size: smaller">{{ note.dttm_str }}</span>
 						<ul>
@@ -330,7 +349,6 @@
 				</div><!-- flex_div -->
 			<hr />
 
-
 			{% endif %} <!-- context = read -->
 
 			{% if context == 'edit' %}
@@ -361,7 +379,7 @@
 					<br />
 					<input type="submit" value="Save" />
 					</form>
-					<button onclick="window.location.href='/note/{{ id }}';">Cancel</button>
+					<button onclick="window.location.href='/cancel/{{ id }}';">Cancel</button>
 				</div>
 
 				<div style="flex-grow: 0; padding: 12px; display:none" name="ul_image_div" id="ul_image_div">
@@ -371,6 +389,32 @@
 			</div><!-- edit flex -->
 
 			{% endif %} <!-- context = edit -->
+
+			{% if context == 'error' %}
+
+			<p>
+			<b>Error</b>
+			</p>
+			<p>
+				<span style="font-color: {{ alert_color }}">{{ message|safe }}</span>
+			</p>
+
+			{% endif %}  <!-- context = error -->
+
+
+			{% if context == 'config' %}
+
+			<p><b>Configuration</b></p>
+
+			<p>Your config file is located at: <i>{{ config_file_path }}</i></p>
+
+			<p>To adjust your configuration, edit that file, then reload the server.</p>
+
+			<p>Your configuration:</p>
+
+			<pre>{{ config_txt }}</pre>
+
+			{% endif %}  <!-- config -->
 
 		</div><!-- main div -->
 

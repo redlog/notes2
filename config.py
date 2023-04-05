@@ -6,33 +6,70 @@ class Config(object):
 
     def __init__(self):
         # defaults
-        self.BASE_PATH = ""
-        self.NOTES_DIR = ""
-        self.LINK_COLOR = "#000000"
-        self.ALERT_COLOR = "#000000"
-        self.FOCAL_COLOR = "#000000"
-        self.DEFAULT_NN = 10
+        self.BASE_PATH = os.getcwd()
+        self.NOTES_DIR = "all_notes"
+        self.LINK_COLOR = "#556B2F"
+        self.ALERT_COLOR = "#FF0000"
+        self.FOCAL_COLOR = "#4C3017"
+        self.TEXT_COLOR = "#1D0F01"
+        self.BACKGROUND_COLOR = "#F5F5F5"
+        self.DEFAULT_NN = 25
         self.HTTP_PORT = 8080
         self.INDEX_TRIGRAMS = 0
+        self.INDEX_STEMMING = 0
+        self.HEADER_COLOR = "#A0A0A0"  # "#C6893E"
+        self.SIDEBAR_COLOR = "#CBC7C4"
 
-        self.PLOT_LIMIT_DAYS = 30
-        self.PLOT_LIMIT_WEEKS = 30
+    @staticmethod
+    def get_config_file_name() -> str:
+        return os.path.join(os.getcwd(), "config.json")
 
-    def load(self) -> None:
-        with open(os.path.join(os.getcwd(), "config.json"), "r") as fp:
+    @staticmethod
+    def read_config_file() -> dict:
+        fn = Config.get_config_file_name()
+        with open(fn, "r") as fp:
             b = fp.read()
             cfg = json.loads(b)
-            self.BASE_PATH = cfg.get('BASE_PATH', self.BASE_PATH)
-            self.NOTES_DIR = cfg.get('NOTES_DIR', self.NOTES_DIR)
-            self.LINK_COLOR = cfg.get('LINK_COLOR', self.LINK_COLOR)
-            self.ALERT_COLOR = cfg.get('ALERT_COLOR', self.ALERT_COLOR)
-            self.FOCAL_COLOR = cfg.get('FOCAL_COLOR', self.FOCAL_COLOR)
-            self.DEFAULT_NN = cfg.get('DEFAULT_NN', self.DEFAULT_NN)
-            self.HTTP_PORT = cfg.get('HTTP_PORT', self.HTTP_PORT)
-            self.INDEX_TRIGRAMS = cfg.get('INDEX_TRIGRAMS', self.INDEX_TRIGRAMS)
+            return cfg
 
-            self.PLOT_LIMIT_DAYS = cfg.get('PLOT_LIMIT_DAYS', self.PLOT_LIMIT_DAYS)
-            self.PLOT_LIMIT_WEEKS = cfg.get('PLOT_LIMIT_DAYS', self.PLOT_LIMIT_WEEKS)
+    def load(self) -> None:
+        fn = Config.get_config_file_name()
+
+        # write a default config if necessary
+        if not os.path.exists(fn):
+            with open(fn, 'w') as fp:
+                b = json.dumps({
+                    'BASE_PATH': self.BASE_PATH,
+                    'NOTES_DIR': self.NOTES_DIR,
+                    'LINK_COLOR': self.LINK_COLOR,
+                    'ALERT_COLOR': self.ALERT_COLOR,
+                    'FOCAL_COLOR': self.FOCAL_COLOR,
+                    'TEXT_COLOR': self.TEXT_COLOR,
+                    'BACKGROUND_COLOR': self.BACKGROUND_COLOR,
+                    'HEADER_COLOR': self.HEADER_COLOR,
+                    'SIDEBAR_COLOR': self.SIDEBAR_COLOR,
+                    'DEFAULT_NN': self.DEFAULT_NN,
+                    'HTTP_PORT': self.HTTP_PORT,
+                    'INDEX_TRIGRAMS': self.INDEX_TRIGRAMS,
+                    'INDEX_STEMMING': self.INDEX_STEMMING,
+                })
+                fp.write(b)
+
+        # read the config file
+        cfg = Config.read_config_file()
+        self.BASE_PATH = cfg.get('BASE_PATH', self.BASE_PATH)
+        self.NOTES_DIR = cfg.get('NOTES_DIR', self.NOTES_DIR)
+        self.LINK_COLOR = cfg.get('LINK_COLOR', self.LINK_COLOR)
+        self.ALERT_COLOR = cfg.get('ALERT_COLOR', self.ALERT_COLOR)
+        self.FOCAL_COLOR = cfg.get('FOCAL_COLOR', self.FOCAL_COLOR)
+        self.BACKGROUND_COLOR = cfg.get('BACKGROUND_COLOR', self.BACKGROUND_COLOR)
+        self.HEADER_COLOR = cfg.get('HEADER_COLOR', self.HEADER_COLOR)
+        self.SIDEBAR_COLOR = cfg.get('SIDEBAR_COLOR', self.SIDEBAR_COLOR)
+        self.TEXT_COLOR = cfg.get('TEXT_COLOR', self.TEXT_COLOR)
+        self.DEFAULT_NN = cfg.get('DEFAULT_NN', self.DEFAULT_NN)
+        self.HTTP_PORT = cfg.get('HTTP_PORT', self.HTTP_PORT)
+        self.INDEX_TRIGRAMS = cfg.get('INDEX_TRIGRAMS', self.INDEX_TRIGRAMS)
+        self.INDEX_STEMMING = cfg.get('INDEX_STEMMING', self.INDEX_STEMMING)
 
     def get_num_notes_per_page(self) -> int:
         return self.DEFAULT_NN
@@ -46,11 +83,23 @@ class Config(object):
     def get_alert_color(self) -> str:
         return self.ALERT_COLOR
 
+    def get_background_color(self) -> str:
+        return self.BACKGROUND_COLOR
+
     def get_link_color(self) -> str:
         return self.LINK_COLOR
 
+    def get_text_color(self) -> str:
+        return self.TEXT_COLOR
+
     def get_focal_color(self) -> str:
         return self.FOCAL_COLOR
+
+    def get_header_color(self) -> str:
+        return self.HEADER_COLOR
+
+    def get_sidebar_color(self) -> str:
+        return self.SIDEBAR_COLOR
 
     def get_http_port(self) -> int:
         return self.HTTP_PORT

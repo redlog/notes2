@@ -6,9 +6,10 @@ import json
 from operator import itemgetter
 import math
 import re
-
 from note import Note
 from config import Config
+import nltk
+from nltk.stem import WordNetLemmatizer
 
 
 class Index(object):
@@ -25,10 +26,19 @@ class Index(object):
         self.tfidf_dfs = []
         self.tfidf_inv_idx = []
 
-        self.stopwords = set()
+        self.stopwords = {'a', 'all', 'an', 'and', 'as', 'at', 'be', 'but', 'by', 'do', 'for', 'from', 'have', 'he',
+                          'her', 'his', 'i', 'if', 'in', 'it', 'my', 'not', 'of', 'on', 'one', 'or', 'she', 'so',
+                          'that', 'the', 'their', 'there', 'they', 'this', 'to', 'we', 'what', 'will', 'with', 'would',
+                          'you'}
+
+        self.lem = None
 
     def load(self, cfg: Config):
         self.cfg = cfg
+
+        if cfg.INDEX_STEMMING:
+            self.lem = WordNetLemmatizer()
+
         try:
             with open(os.path.join(self.cfg.get_base_path(), self.cfg.get_notes_dir(), 'index.json'), 'r') as fp:
                 b = fp.read()
@@ -43,10 +53,6 @@ class Index(object):
         self.tfidf_vocab = obj['tfidf_vocab']
         self.tfidf_dfs = obj['tfidf_dfs']
         self.tfidf_inv_idx = obj['tfidf_inv_idx']
-
-        with open(os.path.join(self.cfg.get_base_path(), 'resources', 'stopwords.txt'), 'r') as fp:
-            sw = fp.read().strip().split('\n')
-            self.stopwords = set(sw)
 
     def save(self) -> None:
         with open(os.path.join(self.cfg.get_base_path(), self.cfg.get_notes_dir(), 'index.json'), 'w') as fp:
@@ -71,9 +77,16 @@ class Index(object):
 
     def get_notes(self) -> list[Note]:
         d = self.notes.copy()
-        fn = (lambda d: d.timestamp)
+        fn = (lambda n: n.timestamp)
         d.sort(key=fn, reverse=True)  # descending by time
         return d
+
+    def get_min_time(self) -> str:
+        if len(self.notes) == 0:
+            return "2000-01-01"
+        m = min(map((lambda n: n.timestamp), self.get_notes()))
+        dttm = datetime.datetime.fromtimestamp(m)
+        return str(dttm)[:10]
 
     def get_notes_search(self, query: str) -> list[Note]:
         doc_scores = self._search(query)  # dict of { doc: score }
@@ -92,11 +105,30 @@ class Index(object):
                 trigram_list.append(trigram)
         return trigram_list
 
+    @staticmethod
+    def words_to_stemmed(words: list[str], lem: WordNetLemmatizer) -> list[str]:
+        lst = []
+
+        try:
+            lem.lemmatize("")
+        except LookupError:
+            nltk.download('wordnet')
+            nltk.download('omw-1.4')
+
+        for w in words:
+            lw = lem.lemmatize(w)
+            lst.append(lw)
+            # print("Lemmatized {0} -> {1}".format(w, lw))
+        return lst
+
     def _search(self, query: str) -> dict:
 
         doc_scores = {}
 
         words = re.split("[^a-z']", query.lower())
+
+        if self.cfg.INDEX_STEMMING:
+            words = Index.words_to_stemmed(words, self.lem)
 
         if self.cfg.INDEX_TRIGRAMS:
             words += Index.words_to_trigrams(words)
@@ -149,6 +181,8 @@ class Index(object):
 
                     # insert all the words into the dictionary
                     words = self.body_to_words(note_text)
+                    if self.cfg.INDEX_STEMMING:
+                        words = Index.words_to_stemmed(words, self.lem)
                     if cfg.INDEX_TRIGRAMS:
                         words += Index.words_to_trigrams(words)
                     for w in set(words):
@@ -195,7 +229,7 @@ class Index(object):
         return []
 
     @staticmethod
-    def get_image_path(timestamp: int, image_num: int, cfg: Config) -> (str, str):
+    def get_image_path(timestamp: int, image_num: int, cfg: Config) -> str:
         path = Index.get_path_from_timestamp(timestamp, cfg)
         img_dir_path = os.path.join(path, str(timestamp))
         filename = "{0}.png".format(image_num)
@@ -263,6 +297,8 @@ class Index(object):
             tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
             _, body = self.read_note_file(note.timestamp, self.cfg, parse=False)
             words = self.body_to_words(body)
+            if self.cfg.INDEX_STEMMING:
+                words = Index.words_to_stemmed(words, self.lem)
             if self.cfg.INDEX_TRIGRAMS:
                 words += Index.words_to_trigrams(words)
 
@@ -301,6 +337,8 @@ class Index(object):
             tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
             _, body = self.read_note_file(note.timestamp, self.cfg, parse=False)
             words = self.body_to_words(body)
+            if self.cfg.INDEX_STEMMING:
+                words = Index.words_to_stemmed(words, self.lem)
             if self.cfg.INDEX_TRIGRAMS:
                 words += Index.words_to_trigrams(words)
             ctr = Counter(words)
@@ -344,9 +382,8 @@ class Index(object):
 
         # delete any images
         for img_id in Index.list_note_images(timestamp, cfg):
-            img_dir_path, filename = Index.get_image_path(timestamp, img_id, cfg)
-            fn = os.path.join(img_dir_path, filename)
-            os.unlink(fn)
+            filename = Index.get_image_path(timestamp, img_id, cfg)
+            os.unlink(filename)
 
         # remove the empty directory
         dir_ = os.path.join(path, str(timestamp))
@@ -371,6 +408,28 @@ class Index(object):
         y, m, d = str(dttm).split()[0].split('-')
         path = os.path.join(cfg.get_base_path(), cfg.get_notes_dir(), y, m, d)
         return path
+
+    @staticmethod
+    def get_lock_file_name(timestamp: int, cfg: Config) -> str:
+        path = Index.get_path_from_timestamp(timestamp, cfg)
+        return os.path.join(path,  '{0}.lock'.format(timestamp))
+
+    @staticmethod
+    def lock_note(timestamp: int, cfg: Config) -> bool:
+        lock_file = Index.get_lock_file_name(timestamp, cfg)
+        if os.path.exists(lock_file):
+            return False
+        with open(lock_file, 'w') as fp:
+            fp.write("")
+        return True
+
+    @staticmethod
+    def unlock_note(timestamp: int, cfg: Config) -> bool:
+        lock_file = Index.get_lock_file_name(timestamp, cfg)
+        if not os.path.exists(lock_file):
+            return False
+        os.unlink(lock_file)
+        return True
 
     def new_file(self, tag_list=None, people_list=None, title=None, body=None, override_timestamp=None) -> int:
 

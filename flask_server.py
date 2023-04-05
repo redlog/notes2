@@ -2,14 +2,17 @@ import os
 import sys
 import math
 import time
+import pprint
 
 from flask import Flask, render_template, redirect, Response, request, send_file
+import waitress
 from urllib.parse import quote, unquote
 
 from typing import Union
 
 import datetime
-import dateutil, dateutil.parser
+import dateutil
+import dateutil.parser
 from dateutil.parser import ParserError
 import markdown
 import re
@@ -69,7 +72,7 @@ def matches_filter(note: Note, filter_list: list[str]):
     return set(matched) == {True}
 
 
-def get_bounds(num_elements: int, page_num: int, elem_per_page: int) -> (int, int, int):
+def get_bounds(num_elements: int, page_num: int, elem_per_page: int) -> tuple[int, int, int]:
     """
     Example: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
     Page: 1
@@ -90,8 +93,8 @@ def get_bounds(num_elements: int, page_num: int, elem_per_page: int) -> (int, in
     return first_element, last_element, num_pages
 
 
-@app.route('/tagline/<tag>')
-def list_taglines(tag: str) -> (str, int):
+@app.route('/tagline/<string:tag>')
+def list_taglines(tag: str) -> tuple[str, int]:
 
     list_of_notes = [note for note in idx.get_notes() if matches_filter(note, [tag])]
 
@@ -109,6 +112,8 @@ def list_taglines(tag: str) -> (str, int):
         _, body = Index.read_note_file(note.timestamp, cfg, parse=False)
         taglines = Note.get_taglines(body, tag)
         for tl in taglines:
+            if tl.find("<!--") > -1:
+                continue
             nl['taglines'].append(markdown.markdown(tl))
         if len(nl['taglines']):
             tagline_list.append(nl);
@@ -124,12 +129,14 @@ def list_taglines(tag: str) -> (str, int):
         'tagline_list': tagline_list,
         'page_title': "Taglines for " + tag,
         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
+        'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+        'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
     }
     return render_template('notes.html', **d), 200
 
 
 @app.route('/', methods=['GET'])
-def list_notes() -> (str, int):
+def list_notes() -> tuple[str, int]:
 
     search: str = request.args.get('search', "", str)
     filter_raw: str = request.args.get('filter', "", str)
@@ -137,8 +144,8 @@ def list_notes() -> (str, int):
     nn: int = request.args.get('nn', cfg.get_num_notes_per_page(), int)
     sk: str = request.args.get('sk', ('search' if len(search) else 'timestamp'), str)
     so: str = request.args.get('so', 'desc', str)
-    time_min: str = request.args.get('time_min', "2000-01-01 00:00:00", str)
-    time_max: str = request.args.get('time_max', str(datetime.datetime.now())[:19], str)
+    time_min: str = request.args.get('time_min', idx.get_min_time(), str)
+    time_max: str = request.args.get('time_max', str(datetime.datetime.now())[:10], str)
 
     if len(search):
         search = unquote(search)
@@ -147,23 +154,22 @@ def list_notes() -> (str, int):
 
     filter_list: list = []
     if len(filter_raw):
-        filter_list = [unquote(s) for s in re.split("[, +]", filter_raw)
-        if ((len(s) > 1) and (s[0] in ['@', '#'])) or ((len(s) > 2) and (s[0] == '~') and (s[1] in ['@', '#']))]
+        filter_list = [unquote(s) for s in re.split("[, +]", filter_raw) if ((len(s) > 1) and (s[0] in ['@', '#'])) or ((len(s) > 2) and (s[0] == '~') and (s[1] in ['@', '#']))]
 
     try:
-        time_min_num = int(time.mktime(dateutil.parser.parse(time_min).timetuple()))
+        time_min_num = int(time.mktime(dateutil.parser.parse(time_min[:10]).timetuple()))
     except (ValueError, ParserError):
-        time_min = "2000-01-01 00:00:00"
+        time_min = idx.get_min_time()
         time_min_num = int(time.mktime(dateutil.parser.parse(time_min).timetuple()))
 
     try:
-        time_max_num = int(time.mktime(dateutil.parser.parse(time_max).timetuple()))
+        time_max_num = int(time.mktime(dateutil.parser.parse(time_max[:10]).timetuple()))
     except (ValueError, ParserError):
-        time_max = str(datetime.datetime.now())[:19]
+        time_max = str(datetime.datetime.now())[:10]
         time_max_num = int(time.mktime(dateutil.parser.parse(time_max).timetuple()))
 
     list_of_notes = [d for d in list_of_notes
-                     if (time_min_num <= d.timestamp <= time_max_num) and matches_filter(d, filter_list)]
+                     if (time_min_num <= d.timestamp <= time_max_num + (60 * 60 * 24)) and matches_filter(d, filter_list)]
 
     # sort the list of notes
     fn = (lambda z: z.timestamp)  # default
@@ -191,7 +197,8 @@ def list_notes() -> (str, int):
     notes_list = []
     for n in note_subset:
         _, note_body = Index.read_note_file(n.timestamp, cfg, parse=False)
-        note_body_md = apply_markdown_and_links(note_body, n.timestamp)
+        #note_body_md = apply_markdown_and_links(note_body, n.timestamp)
+        note_body_md = markdown.markdown(note_body)
 
         # highlighting search results is imperfect.  It is looking for the tokens in the search query, so we
         # can't highlight the actual trigrams that we're indexing on when trigram search, and since it uses
@@ -221,6 +228,8 @@ def list_notes() -> (str, int):
          'page_title': page_title,
          'all_tags': all_tags, 'all_people': all_people,
          'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
+         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
          'min_note': min_, 'max_note': max_, 'n_pages': n_pages,
          'pg': pg, 'nn': nn, 'total_notes': total_notes,
          'search_str': search, 'filter_str': ', '.join(filter_list),
@@ -237,9 +246,8 @@ def list_notes() -> (str, int):
 
 
 @app.route('/image/<int:note_id>/<int:img_num>')
-def read_image(note_id: int, img_num: int) -> (str, int):
-    path, fn = Index.get_image_path(note_id, img_num, cfg)
-    filename = os.path.join(path, fn)
+def read_image(note_id: int, img_num: int) -> Response:
+    filename = Index.get_image_path(note_id, img_num, cfg)
     return send_file(filename, mimetype='image/png')
 
 
@@ -251,9 +259,13 @@ def apply_markdown_and_links(note_body: str, note_id: int) -> str:
     note_refs = re.findall("note:([0123456789]+)", note_body_md)
     for note_ref in note_refs:
         # TODO: check to see if it's faster to read the file, or walk the list of notes in the index
-        note_ref_note, _ = Index.read_note_file(int(note_ref), cfg)
-        note_body_md = re.sub("note:{0}".format(note_ref),
+        try:
+            note_ref_note, _ = Index.read_note_file(int(note_ref), cfg)
+            note_body_md = re.sub("note:{0}".format(note_ref),
                               "<a href=\"/note/{0}\">{1}</a>".format(note_ref, note_ref_note.title), note_body_md)
+        except FileNotFoundError:
+            note_body_md = re.sub("note:{0}".format(note_ref),
+                              "<u>Note not found! {0}</u>".format(note_ref), note_body_md)
 
     # tags and people
     note_body_md = re.sub("#([a-z_\\d]+)", r'<a href="/?filter=%23\1">#\1</a>', note_body_md)
@@ -263,7 +275,7 @@ def apply_markdown_and_links(note_body: str, note_id: int) -> str:
 
 
 @app.route('/note/<int:note_id>', methods=['GET'])
-def read_note(note_id: int) -> (str, int):
+def read_note(note_id: int) -> tuple[str, int]:
 
     try:
         note, note_body = Index.read_note_file(note_id, cfg)
@@ -297,23 +309,24 @@ def read_note(note_id: int) -> (str, int):
          'img_refs': img_refs,
          'last_edit_dttm': str(last_edit_dttm)[:19],
          'page_title': note.title,
-         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color()
+         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
+         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
          }
 
     return render_template("notes.html", **d), 200
 
 
 @app.route('/image_del/<int:note_id>/<int:img_num>')
-def delete_image(note_id: int, img_num: int) -> (str, int):
-    path, fn = Index.get_image_path(note_id, img_num, cfg)
-    filename = os.path.join(path, fn)
+def delete_image(note_id: int, img_num: int) -> Response:
+    filename = Index.get_image_path(note_id, img_num, cfg)
     os.unlink(filename)
     time.sleep(1)  # give the os a second to remove the file cleanly
     return redirect("/image_edit_list/{0}".format(note_id), code=302)
 
 
 @app.route('/image_edit_list/<int:note_id>', methods=['GET'])
-def show_image_edit_list(note_id: int) -> (str, int):
+def show_image_edit_list(note_id: int) -> tuple[str, int]:
 
     # if any images exist, put them at the bottom
     img_refs = idx.list_note_images(note_id, cfg)
@@ -321,19 +334,36 @@ def show_image_edit_list(note_id: int) -> (str, int):
     d = {
         'id': note_id,
         'img_refs': img_refs,
-        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color()
+        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
+        'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+        'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
     }
 
     return render_template("image_edit_list.html", **d)
 
 
 @app.route('/edit/<int:note_id>', methods=['GET'])
-def edit_note(note_id: int) -> (str, int):
+def edit_note(note_id: int) -> tuple[str, int]:
 
     try:
         note, note_body = Index.read_note_file(note_id, cfg)
     except FileNotFoundError:
         return "<html><body>File not found: {0}</body></html>".format(note_id), 404
+
+    r = Index.lock_note(note_id, cfg)
+
+    if not r:
+        d = {
+            'context': 'error',
+            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
+            'focal_color': cfg.get_focal_color(),
+            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
+            'page_title': "Error: note {0} is being edited in another window.".format(note_id),
+            'message': "Error: note {0} is being edited in another window.<br /><br /><i>Lock file: {1}</i>".format(
+                note_id, Index.get_lock_file_name(note_id, cfg))
+        }
+        return render_template("notes.html", **d), 403
 
     pl = idx.get_people()
     pl = list(map(itemgetter(0), pl))
@@ -344,6 +374,8 @@ def edit_note(note_id: int) -> (str, int):
          'page_title': note.title,
          'people_list': pl,
          'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
+         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
          }
 
     return render_template("notes.html", **d), 200
@@ -370,13 +402,41 @@ def upload_image() -> Union[Response, tuple[str, int]]:
     if not file.filename.lower().endswith(".png"):
         return "<html><body>" + "File must be png" + ok_str + "</body></html>", 400
 
-    path, fn = Index.get_image_path(id_, next_id, cfg)
+    filename = Index.get_image_path(id_, next_id, cfg)
+    path = os.path.join(*os.path.split(filename)[:-1])
     os.makedirs(path, exist_ok=True)
-    filename = os.path.join(path, fn)
     file.save(filename)
 
     html = "<html><body>" + "Image saved as <" + str(next_id) + ">" + "</body></html>"
     return redirect("/image_edit_list/{0}".format(id_), code=302)
+
+
+@app.route('/config')
+def config() -> tuple[str, int]:
+    d = {
+        'context': 'config',
+        'config_file_path': Config.get_config_file_name(),
+        'config_txt': pprint.pformat(Config.read_config_file())
+    }
+    return render_template("notes.html", **d), 200
+
+
+@app.route('/cancel/<int:note_id>', methods=['GET'])
+def cancel_edit(note_id: int) -> Union[Response, tuple[str, int]]:
+    r = Index.unlock_note(note_id, cfg)
+    if not r:
+        d = {
+            'context': 'error',
+            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
+            'focal_color': cfg.get_focal_color(),
+            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
+            'page_title': "Error: note {0} was not previously locked for edit.".format(note_id),
+            'message': "Error: note {0} was not previously locked for edit.<br /><br /><i>Lock file: {1}</i>".format(
+                note_id, Index.get_lock_file_name(note_id, cfg))
+        }
+        return render_template("notes.html", **d), 403
+    return redirect("/note/{0}".format(note_id), code=302)
 
 
 @app.route('/save', methods=['POST'])
@@ -384,6 +444,20 @@ def save_note() -> Union[Response, tuple[str, int]]:
 
     id_ = request.form.get('id', 0, int)
     text_ = request.form.get('big_text', "", str)
+
+    r = Index.unlock_note(id_, cfg)
+    if not r:
+        d = {
+            'context': 'error',
+            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
+            'focal_color': cfg.get_focal_color(),
+            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
+            'page_title': "Error: note {0} was not previously locked for edit.".format(id_),
+            'message': "Error: note {0} was not previously locked for edit.<br /><br /><i>Lock file: {1}</i>".format(
+                id_, Index.get_lock_file_name(id_, cfg))
+        }
+        return render_template("notes.html", **d), 403
 
     try:
         # remove the old one from the index
@@ -444,14 +518,13 @@ def reindex() -> Response:
     return redirect("/", code=302)
 
 
-@app.route('/exit', methods=['GET'])
-def exit_app() -> None:
-    sys.exit()
-
-
 def run_app(cfg_: Config) -> None:
     global app, cfg, idx
     cfg = cfg_
     idx = Index()
     idx.load(cfg)
-    app.run(debug=False, port=cfg.get_http_port())
+
+    #app.run(debug=False, port=cfg.get_http_port())
+    print("Localnotes server is running at http://localhost:{0}\n".format(cfg.get_http_port()))
+    waitress_server = waitress.server.WSGIServer(app, listen="127.0.0.1:{0}".format(cfg.get_http_port()))
+    waitress_server.run()
