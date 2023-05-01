@@ -47,7 +47,7 @@ class Index(object):
             # create an empty index
             obj = {'notes': [], 'tags': [], 'people': [], 'tfidf_vocab': [], 'tfidf_dfs': [], 'tfidf_inv_idx': []}
 
-        self.notes = [Note(n['tags'], n['people'], n['title'], n['timestamp']) for n in obj['notes']]
+        self.notes = [Note(n['tags'], n['people'], n['title'], n['timestamp'], n['last_edit_time']) for n in obj['notes']]
         self.people = Counter(dict(obj['people']))
         self.tags = Counter(dict(obj['tags']))
         self.tfidf_vocab = obj['tfidf_vocab']
@@ -229,7 +229,7 @@ class Index(object):
         return []
 
     @staticmethod
-    def get_image_path(timestamp: int, image_num: int, cfg: Config) -> str:
+    def get_image_path(timestamp: int, image_num: int, cfg: Config) -> (str, str):
         path = Index.get_path_from_timestamp(timestamp, cfg)
         img_dir_path = os.path.join(path, str(timestamp))
         filename = "{0}.png".format(image_num)
@@ -243,6 +243,8 @@ class Index(object):
             b = fp.read()
 
         ts = int(os.path.split(fn)[-1][:-3])
+
+        last_edit_time = int(os.path.getmtime(fn))
 
         tags = None
         people = None
@@ -279,7 +281,7 @@ class Index(object):
             tags = sorted(tags)
             people = sorted(people)
 
-        n = Note(tags, people, title, ts)
+        n = Note(tags, people, title, ts, last_edit_time)
         return n, b
 
     def add_note_to_index(self, note: Note, save=True, add_to_search_index=True) -> None:
@@ -335,7 +337,7 @@ class Index(object):
 
             # remove doc from search index
             tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
-            _, body = self.read_note_file(note.timestamp, self.cfg, parse=False)
+            _, body = self.read_note_file(my_note.timestamp, self.cfg, parse=False)
             words = self.body_to_words(body)
             if self.cfg.INDEX_STEMMING:
                 words = Index.words_to_stemmed(words, self.lem)
@@ -354,7 +356,7 @@ class Index(object):
                 self.tfidf_dfs[widx] -= 1
 
                 # remove from the inverted index
-                self.tfidf_inv_idx[widx] = [_ for _ in self.tfidf_inv_idx[widx] if _[0] != note.timestamp]
+                self.tfidf_inv_idx[widx] = [_ for _ in self.tfidf_inv_idx[widx] if _[0] != my_note.timestamp]
 
             # remove note's tags from tag and people counts (and list if necessary)
             for t in my_note.tags:
@@ -382,8 +384,8 @@ class Index(object):
 
         # delete any images
         for img_id in Index.list_note_images(timestamp, cfg):
-            filename = Index.get_image_path(timestamp, img_id, cfg)
-            os.unlink(filename)
+            path, filename = Index.get_image_path(timestamp, img_id, cfg)
+            os.unlink(os.path.join(path, filename))
 
         # remove the empty directory
         dir_ = os.path.join(path, str(timestamp))
@@ -396,7 +398,7 @@ class Index(object):
         fn = os.path.join(path, '{0}.md'.format(timestamp))
         try:
             os.makedirs(path)
-        except FileExistsError as e:
+        except FileExistsError:
             pass
         with open(fn, 'w') as fp:
             text = re.sub("\r\n", "\n", text)
@@ -454,6 +456,6 @@ class Index(object):
 """.format(tags, people, (title or "(untitled)"), (body or ""))
 
         Index.save_note_file(u, template, self.cfg)
-        n = Note((tag_list or []), (people_list or []), (title or '(untitled)'), u)
+        n = Note((tag_list or []), (people_list or []), (title or '(untitled)'), u, u)
         self.add_note_to_index(n)
         return u

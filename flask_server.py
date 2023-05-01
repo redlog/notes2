@@ -1,5 +1,4 @@
 import os
-import sys
 import math
 import time
 import pprint
@@ -116,7 +115,7 @@ def list_taglines(tag: str) -> tuple[str, int]:
                 continue
             nl['taglines'].append(markdown.markdown(tl))
         if len(nl['taglines']):
-            tagline_list.append(nl);
+            tagline_list.append(nl)
 
     all_tags = [(quote(t[0]), t[0], t[1]) for t in idx.get_tags()]
     all_people = [(quote(p[0]), p[0], p[1]) for p in idx.get_people()]
@@ -173,8 +172,10 @@ def list_notes() -> tuple[str, int]:
 
     # sort the list of notes
     fn = (lambda z: z.timestamp)  # default
-    if sk == 'relevance':
+    if sk == 'search':
         fn = (lambda z: z.score)
+    if sk == 'last_edit':
+        fn = (lambda z: z.last_edit_time)
 
     list_of_notes.sort(key=fn, reverse=(so == 'desc'))
     date_histogram = make_date_histogram(list_of_notes, cfg.get_focal_color())
@@ -197,10 +198,12 @@ def list_notes() -> tuple[str, int]:
     notes_list = []
     for n in note_subset:
         _, note_body = Index.read_note_file(n.timestamp, cfg, parse=False)
-        #note_body_md = apply_markdown_and_links(note_body, n.timestamp)
-        note_body_md = markdown.markdown(note_body)
 
-        # highlighting search results is imperfect.  It is looking for the tokens in the search query, so we
+        # could just do rendering markdown, which is simpler i.e. markdown.markdown(note_body)
+        note_body = apply_images(note_body, n.timestamp)
+        note_body_md = apply_markdown_and_links(note_body)
+
+        # XXX: highlighting search results is imperfect.  It is looking for the tokens in the search query, so we
         # can't highlight the actual trigrams that we're indexing on when trigram search, and since it uses
         # the tokens as substrings, it'll find them even when they are _not_ in the index, in word-based search
         if len(search):
@@ -212,6 +215,7 @@ def list_notes() -> tuple[str, int]:
             'people_list': [(quote(p), p) for p in n.people],
             'timestamp': n.timestamp,
             'dttm_str': str(datetime.datetime.fromtimestamp(n.timestamp))[:19],
+            'last_edit_str': str(datetime.datetime.fromtimestamp(n.last_edit_time))[:19],
             'note_body_md': note_body_md,
             'title': n.title,
             'score': n.score
@@ -224,7 +228,7 @@ def list_notes() -> tuple[str, int]:
     if len(filter_list):
         page_title += "\"" + ', '.join(filter_list) + "\""
 
-    d = {'context': 'list',
+    d = {'context': 'list', 'compact': cfg.get_list_compact(),  # compact flag is currently unused
          'page_title': page_title,
          'all_tags': all_tags, 'all_people': all_people,
          'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
@@ -247,11 +251,11 @@ def list_notes() -> tuple[str, int]:
 
 @app.route('/image/<int:note_id>/<int:img_num>')
 def read_image(note_id: int, img_num: int) -> Response:
-    filename = Index.get_image_path(note_id, img_num, cfg)
-    return send_file(filename, mimetype='image/png')
+    path, filename = Index.get_image_path(note_id, img_num, cfg)
+    return send_file(os.path.join(path, filename), mimetype='image/png')
 
 
-def apply_markdown_and_links(note_body: str, note_id: int) -> str:
+def apply_markdown_and_links(note_body: str) -> str:
 
     note_body_md = markdown.markdown(note_body, extensions=['tables', 'attr_list'])
 
@@ -262,16 +266,26 @@ def apply_markdown_and_links(note_body: str, note_id: int) -> str:
         try:
             note_ref_note, _ = Index.read_note_file(int(note_ref), cfg)
             note_body_md = re.sub("note:{0}".format(note_ref),
-                              "<a href=\"/note/{0}\">{1}</a>".format(note_ref, note_ref_note.title), note_body_md)
+                                  "<a href=\"/note/{0}\">{1}</a>".format(note_ref, note_ref_note.title), note_body_md)
         except FileNotFoundError:
             note_body_md = re.sub("note:{0}".format(note_ref),
-                              "<u>Note not found! {0}</u>".format(note_ref), note_body_md)
+                                  "<u>Note not found! {0}</u>".format(note_ref), note_body_md)
 
     # tags and people
     note_body_md = re.sub("#([a-z_\\d]+)", r'<a href="/?filter=%23\1">#\1</a>', note_body_md)
     note_body_md = re.sub("@([a-z_\\d]+)", r'<a href="/?filter=%40\1">@\1</a>', note_body_md)
 
     return note_body_md
+
+
+def apply_images(note_body: str, note_id: int) -> str:
+    image_refs = map(int, re.findall("<([0123456789]+)>", note_body))
+    for image_num in image_refs:
+        u = "/image/{0}/{1}".format(note_id, image_num)
+        s = "<a href=\"{0}\" target=\"_new\"><img style=\"max-height:100px; max-width: 100%\" src=\"{0}\"></a>".format(
+            u)
+        note_body = re.sub("<{0}>".format(image_num), s, note_body)
+    return note_body
 
 
 @app.route('/note/<int:note_id>', methods=['GET'])
@@ -281,23 +295,18 @@ def read_note(note_id: int) -> tuple[str, int]:
         note, note_body = Index.read_note_file(note_id, cfg)
 
         # check note body for references to images
-        image_refs = map(int, re.findall("<([0123456789]+)>", note_body))
-
-        for image_num in image_refs:
-            u = "/image/{0}/{1}".format(note_id, image_num)
-            s = "<a href=\"{0}\" target=\"_new\"><img style=\"max-height:100px; max-width: 100%\" src=\"{0}\"></a>".format(u)
-            note_body = re.sub("<{0}>".format(image_num), s, note_body)
+        note_body = apply_images(note_body, note_id)
 
         # if any images exist, put them at the bottom
         img_refs = idx.list_note_images(note_id, cfg)
 
-        note_body_md = apply_markdown_and_links(note_body, note_id)
+        note_body_md = apply_markdown_and_links(note_body)
 
     except FileNotFoundError:
         return "<html><body>File not found: {0}</body></html>".format(note_id), 404
 
     dttm = datetime.datetime.fromtimestamp(note_id)
-    last_edit_dttm = datetime.datetime.fromtimestamp(os.path.getmtime(note.get_file_name(cfg)))
+    last_edit_dttm = datetime.datetime.fromtimestamp(note.get_last_edit_time())
 
     d = {'context': 'read',
          'id': note_id,
@@ -319,8 +328,8 @@ def read_note(note_id: int) -> tuple[str, int]:
 
 @app.route('/image_del/<int:note_id>/<int:img_num>')
 def delete_image(note_id: int, img_num: int) -> Response:
-    filename = Index.get_image_path(note_id, img_num, cfg)
-    os.unlink(filename)
+    path, filename = Index.get_image_path(note_id, img_num, cfg)
+    os.unlink(os.path.join(path, filename))
     time.sleep(1)  # give the os a second to remove the file cleanly
     return redirect("/image_edit_list/{0}".format(note_id), code=302)
 
@@ -339,7 +348,7 @@ def show_image_edit_list(note_id: int) -> tuple[str, int]:
         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
     }
 
-    return render_template("image_edit_list.html", **d)
+    return render_template("image_edit_list.html", **d), 200
 
 
 @app.route('/edit/<int:note_id>', methods=['GET'])
@@ -402,12 +411,10 @@ def upload_image() -> Union[Response, tuple[str, int]]:
     if not file.filename.lower().endswith(".png"):
         return "<html><body>" + "File must be png" + ok_str + "</body></html>", 400
 
-    filename = Index.get_image_path(id_, next_id, cfg)
-    path = os.path.join(*os.path.split(filename)[:-1])
+    path, filename = Index.get_image_path(id_, next_id, cfg)
     os.makedirs(path, exist_ok=True)
-    file.save(filename)
+    file.save(os.path.join(path, filename))
 
-    html = "<html><body>" + "Image saved as <" + str(next_id) + ">" + "</body></html>"
     return redirect("/image_edit_list/{0}".format(id_), code=302)
 
 
@@ -415,6 +422,10 @@ def upload_image() -> Union[Response, tuple[str, int]]:
 def config() -> tuple[str, int]:
     d = {
         'context': 'config',
+        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
+        'focal_color': cfg.get_focal_color(),
+        'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+        'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
         'config_file_path': Config.get_config_file_name(),
         'config_txt': pprint.pformat(Config.read_config_file())
     }
@@ -459,19 +470,15 @@ def save_note() -> Union[Response, tuple[str, int]]:
         }
         return render_template("notes.html", **d), 403
 
-    try:
-        # remove the old one from the index
-        idx.remove_note_from_index(id_, save=False)
+    # remove the old one from the index
+    idx.remove_note_from_index(id_, save=False)
 
-        # overwrite, then get a new note object
-        Index.save_note_file(id_, text_, cfg)
-        note, _ = Index.read_note_file(id_, cfg)
+    # overwrite, then get a new note object
+    Index.save_note_file(id_, text_, cfg)
+    note, _ = Index.read_note_file(id_, cfg)
 
-        # update the index for the revised note
-        idx.add_note_to_index(note)
-
-    except Exception as e:
-        return "<html><body>Error: {0}</body></html>".format(str(e)), 500
+    # update the index for the revised note
+    idx.add_note_to_index(note)
 
     return redirect("/note/{0}".format(id_), code=302)
 
@@ -524,7 +531,6 @@ def run_app(cfg_: Config) -> None:
     idx = Index()
     idx.load(cfg)
 
-    #app.run(debug=False, port=cfg.get_http_port())
     print("Localnotes server is running at http://localhost:{0}\n".format(cfg.get_http_port()))
     waitress_server = waitress.server.WSGIServer(app, listen="127.0.0.1:{0}".format(cfg.get_http_port()))
     waitress_server.run()

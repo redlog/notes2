@@ -6,15 +6,17 @@ from config import Config
 
 class Note(object):
 
-    def __init__(self, tags: list[str], people: list[str], title: str, timestamp: int):
+    def __init__(self, tags: list[str], people: list[str], title: str, timestamp: int, last_edit_time=None):
         self.tags = tags
         self.people = people
         self.title = title
         self.timestamp = timestamp
         self.score = 0.0
+        self.last_edit_time = last_edit_time
 
     def to_json(self) -> dict:
-        return {'tags': self.tags, 'people': self.people, 'title': self.title, 'timestamp': self.timestamp}
+        return {'tags': self.tags, 'people': self.people, 'title': self.title, 'timestamp': self.timestamp,
+                'last_edit_time': self.last_edit_time}
 
     def get_file_name(self, cfg: Config) -> str:
         dttm = datetime.datetime.fromtimestamp(self.timestamp)
@@ -29,3 +31,6 @@ class Note(object):
 
     def __str__(self):
         return "{0}: {1} ({2}, {3})".format(self.timestamp, self.title, ', '.join(self.tags), ', '.join(self.people))
+
+    def get_last_edit_time(self):
+        return self.last_edit_time

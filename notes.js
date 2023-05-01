@@ -414,10 +414,17 @@ function new_search() {
     srch = document.getElementById('input_search').value;
     if (srch.length > 0) {
         var v = document.getElementById('input_sk');
-        v.value = 'relevance';
+        v.value = 'search';
         var w = document.getElementById('input_so');
         w.value = 'desc';
     }
+    submit_list_form();
+}
+
+function re_sort_list()
+{
+    document.getElementById('input_sk').value = document.getElementById('dropdown_sk').value;
+    document.getElementById('input_so').value = document.getElementById('dropdown_so').value;
     submit_list_form();
 }
 

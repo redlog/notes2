@@ -14,11 +14,13 @@ class Config(object):
         self.TEXT_COLOR = "#1D0F01"
         self.BACKGROUND_COLOR = "#F5F5F5"
         self.DEFAULT_NN = 25
-        self.HTTP_PORT = 8080
+        self.HTTP_PORT = 80
         self.INDEX_TRIGRAMS = 0
         self.INDEX_STEMMING = 0
         self.HEADER_COLOR = "#A0A0A0"  # "#C6893E"
         self.SIDEBAR_COLOR = "#CBC7C4"
+        self.USAGE_STATS = 0
+        self.LIST_COMPACT = 0
 
     @staticmethod
     def get_config_file_name() -> str:
@@ -35,28 +37,12 @@ class Config(object):
     def load(self) -> None:
         fn = Config.get_config_file_name()
 
-        # write a default config if necessary
-        if not os.path.exists(fn):
-            with open(fn, 'w') as fp:
-                b = json.dumps({
-                    'BASE_PATH': self.BASE_PATH,
-                    'NOTES_DIR': self.NOTES_DIR,
-                    'LINK_COLOR': self.LINK_COLOR,
-                    'ALERT_COLOR': self.ALERT_COLOR,
-                    'FOCAL_COLOR': self.FOCAL_COLOR,
-                    'TEXT_COLOR': self.TEXT_COLOR,
-                    'BACKGROUND_COLOR': self.BACKGROUND_COLOR,
-                    'HEADER_COLOR': self.HEADER_COLOR,
-                    'SIDEBAR_COLOR': self.SIDEBAR_COLOR,
-                    'DEFAULT_NN': self.DEFAULT_NN,
-                    'HTTP_PORT': self.HTTP_PORT,
-                    'INDEX_TRIGRAMS': self.INDEX_TRIGRAMS,
-                    'INDEX_STEMMING': self.INDEX_STEMMING,
-                })
-                fp.write(b)
+        # read the config file if it exists
+        cfg = {}
+        if os.path.exists(fn):
+            cfg = Config.read_config_file()
 
-        # read the config file
-        cfg = Config.read_config_file()
+        # when necessary populate it with defaults
         self.BASE_PATH = cfg.get('BASE_PATH', self.BASE_PATH)
         self.NOTES_DIR = cfg.get('NOTES_DIR', self.NOTES_DIR)
         self.LINK_COLOR = cfg.get('LINK_COLOR', self.LINK_COLOR)
@@ -70,6 +56,29 @@ class Config(object):
         self.HTTP_PORT = cfg.get('HTTP_PORT', self.HTTP_PORT)
         self.INDEX_TRIGRAMS = cfg.get('INDEX_TRIGRAMS', self.INDEX_TRIGRAMS)
         self.INDEX_STEMMING = cfg.get('INDEX_STEMMING', self.INDEX_STEMMING)
+        self.USAGE_STATS = cfg.get('USAGE_STATS', self.USAGE_STATS)
+        self.LIST_COMPACT = cfg.get('LIST_COMPACT', self.LIST_COMPACT)
+
+        # save any changes
+        with open(fn, 'w') as fp:
+            b = json.dumps({
+                'BASE_PATH': self.BASE_PATH,
+                'NOTES_DIR': self.NOTES_DIR,
+                'LINK_COLOR': self.LINK_COLOR,
+                'ALERT_COLOR': self.ALERT_COLOR,
+                'FOCAL_COLOR': self.FOCAL_COLOR,
+                'TEXT_COLOR': self.TEXT_COLOR,
+                'BACKGROUND_COLOR': self.BACKGROUND_COLOR,
+                'HEADER_COLOR': self.HEADER_COLOR,
+                'SIDEBAR_COLOR': self.SIDEBAR_COLOR,
+                'DEFAULT_NN': self.DEFAULT_NN,
+                'HTTP_PORT': self.HTTP_PORT,
+                'INDEX_TRIGRAMS': self.INDEX_TRIGRAMS,
+                'INDEX_STEMMING': self.INDEX_STEMMING,
+                'USAGE_STATS': self.USAGE_STATS,
+                'LIST_COMPACT': self.LIST_COMPACT,
+            })
+            fp.write(b)
 
     def get_num_notes_per_page(self) -> int:
         return self.DEFAULT_NN
@@ -103,3 +112,6 @@ class Config(object):
 
     def get_http_port(self) -> int:
         return self.HTTP_PORT
+
+    def get_list_compact(self) -> int:
+        return self.LIST_COMPACT
