@@ -13,6 +13,9 @@
 		</title>
 		<link rel="stylesheet" href="{{ url_for('static', filename = 'notes.css') }}" />
 		<link rel="stylesheet" href="http://code.jquery.com/ui/1.13.1/themes/base/jquery-ui.css" />
+		<link rel="shortcut icon" href="/favicon.ico">
+
+
 		<script src="https://code.jquery.com/jquery-3.6.0.js"></script>
 		<script src="https://code.jquery.com/ui/1.13.1/jquery-ui.js"></script>
 	    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/5.9.2/d3.js"></script>
@@ -58,6 +61,7 @@
 						<input name="nn" type="hidden" value="{{ nn }}" id="input_nn" />
 						<input name="sk" type="hidden" value="{{ sk }}" id="input_sk" />
 						<input name="so" type="hidden" value="{{ so }}" id="input_so" />
+						<input name="export" type="hidden" value="0" id="input_export" />
 
 						<table class="header_table">
 							<tr>
@@ -67,7 +71,7 @@
 								<td><b>From:</b></td>
 								<td><input name="time_min" id="input_time_min" size="16" type="text" value="{{ time_min }}"></td>
 								<td>&nbsp; &nbsp;</td>
-								<td><input type="button" onclick="javascript:new_search();" value="Go"></td>
+								<td><input type="button" onclick="javascript:submit_search_form();" value="Go"></td>
 							</tr>
 								<td><b>Filter:</b></td>
 								<td><input name="filter" id="input_filter" size="50" type="text" value="{{ filter_str }}"></td>
@@ -86,6 +90,20 @@
 						<a href="/reindex">reindex</a> |
 						<a href="/config">config</a> |
 						<a href="http://redlog.net/localnotes/" taget="_new">about</a>
+						<br /><br />
+						<form name="project_form" id="project_form" action="/project" method="GET">
+						Project:
+							<select name="project_name" id="project_name">
+							{% for project_name in project_list %}
+								<option value="{{ project_name }}">{{ project_name }}</option>
+							{% endfor %}
+							</select>
+							<input type="submit" value="Go">
+						</form>
+							<script language="javascript">
+						  		document.getElementById("project_name").value = "{{ active_project }}";
+							</script>
+
 					</td>
 				</tr>
 			</table>
@@ -177,6 +195,9 @@
 							Search: {{ search_str }}
 						</div>
 						{% endif %} {# search str #}
+						<div class="focal" style="text-align: center; font-size: small; text-decoration: italic">
+							<a href="#" onclick="javascript:export_notes();">export this result set</a>
+						</div>
 						</td>
 
 					</tr>
@@ -219,15 +240,15 @@
 							<select name="sk" id="dropdown_sk">
 								<option value="timestamp">Timestamp</option>
 								<option value="last_edit">Last Edit</option>
-								{% if sk == "search" %}
-								<option value="search">Relevance</option>
+								{% if search_str|length > 0 %}
+								<option value="relevance">Relevance</option>
 								{% endif %}
 							</select>
 							<select name="so" id="dropdown_so">
 								<option value="asc">Asc</option>
 								<option value="desc">Desc</option>
 							</select>
-							<input type="button" onclick="javascript:re_sort_list();" value="Go"></td>
+							<input type="button" onclick="javascript:re_sort_list();" value="Go">
 							<script language="javascript">
 						  		document.getElementById("dropdown_so").value = "{{ so }}";
 						  		document.getElementById("dropdown_sk").value = "{{ sk }}";
@@ -239,13 +260,6 @@
 				<hr />
 
 				<div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
-
-				<svg style="width: 80%; height: {{ 140 * n_years }}px" id="date_histogram_svg" name="date_histogram_svg"></svg>
-				<script>
-				const date_histogram_data = {{ date_histogram|tojson }};
-				</script>
-				<script src="{{ url_for('static', filename = 'date_histogram.js') }}" language="javascript"></script>
-				<hr />
 
 				<!-- note text -->
 				{% for note in notes_list %}
@@ -359,7 +373,7 @@
 
 					{% for img_ref in img_refs %}
 					<p>
-						<a href="/image/{{ id }}/{{ img_ref }}" target="_new"><img style="max-height:100px; max-width: 100%" src="/image/{{ id }}/{{ img_ref }}"></a>
+						<a href="/image/{{ id }}/{{ img_ref }}" target="_new"><img class="img_footer" src="/image/{{ id }}/{{ img_ref }}"></a>
 					</p>
 					{% endfor %}
 
@@ -396,6 +410,7 @@
 
 					<form id="save_form" action="/save" method="POST" enctype="application/x-www-form-urlencoded">
 					<input type="hidden" id="id" name="id" value="{{ id }}" />
+					<input type="hidden" id="starting_hash" name="starting_hash" value="{{ starting_hash }}" />
 					<textarea class="txt_sans" style="width: 100%; height: 80vh;" form="save_form" id="big_text" name="big_text">{{ note_body }}</textarea>
 					<br />
 					<input type="submit" value="Save" />
@@ -408,34 +423,39 @@
 				</div>
 
 			</div><!-- edit flex -->
-
 			{% endif %} <!-- context = edit -->
 
-			{% if context == 'error' %}
 
+			{% if context == 'error' %}
 			<p>
 			<b>Error</b>
 			</p>
 			<p>
 				<span style="font-color: {{ alert_color }}">{{ message|safe }}</span>
 			</p>
-
 			{% endif %}  <!-- context = error -->
 
 
 			{% if context == 'config' %}
-
 			<p><b>Configuration</b></p>
-
 			<p>Your config file is located at: <i>{{ config_file_path }}</i></p>
-
 			<p>To adjust your configuration, edit that file, then reload the server.</p>
-
 			<p>Your configuration:</p>
-
 			<pre>{{ config_txt }}</pre>
 
+			<p><b>Project Configuration</b></p>
+			<p>The configuration for this project is located within the index file, which is located at: <i>{{ index_path }}</i></p>
+			<p>To adjust your project configuration, edit that file, then reload the project.</p>
+			<p>Your configuration:</p>
+			<pre>{{ project_config_txt }}</pre>
+
 			{% endif %}  <!-- config -->
+
+
+			{% if context == 'export' %}
+			<p><b>Export</b></p>
+			<p>{{ num_notes }} notes written to <i>{{ export_file_path }}</i></p>
+			{% endif %}  <!-- export -->
 
 		</div><!-- main div -->
 

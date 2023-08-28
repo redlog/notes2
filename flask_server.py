@@ -1,5 +1,7 @@
+import hashlib
 import os
 import math
+import signal
 import time
 import pprint
 
@@ -16,7 +18,7 @@ from dateutil.parser import ParserError
 import markdown
 import re
 from operator import itemgetter
-from collections import Counter
+from html import escape
 
 from note import Note
 from index import Index
@@ -27,31 +29,9 @@ cfg: Config = None
 idx: Index = None
 
 
-def make_date_histogram(note_list: list[Note], color: str) -> list[dict]:
-    # grab the dates so we can make a histogram
-    dates = [datetime.datetime.fromtimestamp(note.timestamp) for note in note_list]
-
-    # show no more than 2 calendar years
-    previous_year = datetime.datetime.now().year - 1
-    first_day_to_show = datetime.datetime(previous_year, 1, 1)
-
-    dates = Counter([datetime.date(dttm.year, dttm.month, dttm.day) for dttm in dates if dttm >= first_day_to_show])  # e.g. "2022-04-01"
-    today = datetime.date.today()
-    if len(dates) == 0:  # starting from scratch
-        dates[today] = 0
-    min_date = min(dates)
-
-    # zero-fill dates with no observations
-    m = min_date
-    while m <= today:
-        if m not in dates:
-            dates[m] = 0
-        m += datetime.timedelta(days=1)
-
-    dates = [{'Date': str(dt)[:10], 'NoteCount': dates[dt]} for dt in dates]
-    dates.sort(key=(lambda d: d['Date']))
-
-    return dates
+@app.route('/favicon.ico')
+def favicon():
+    return send_file("localnotes_icon.png", mimetype='image/png')
 
 
 def matches_filter(note: Note, filter_list: list[str]):
@@ -92,7 +72,21 @@ def get_bounds(num_elements: int, page_num: int, elem_per_page: int) -> tuple[in
     return first_element, last_element, num_pages
 
 
+def check_index_integrity(func):
+
+    def cii_inner(*args, **kwargs):
+        local_hash = idx.get_local_index_hash(cfg)
+        if local_hash != idx.hash_:
+            # sys.stderr.write("Index hash {0} does not match local hash {1}.  Need to reload index!".format(idx.hash_, local_hash))
+            idx.load(cfg)
+        return func(*args, **kwargs)
+
+    cii_inner.__name__ = func.__name__
+    return cii_inner
+
+
 @app.route('/tagline/<string:tag>')
+@check_index_integrity
 def list_taglines(tag: str) -> tuple[str, int]:
 
     list_of_notes = [note for note in idx.get_notes() if matches_filter(note, [tag])]
@@ -127,6 +121,7 @@ def list_taglines(tag: str) -> tuple[str, int]:
         'tag_quot': quote(tag),
         'tagline_list': tagline_list,
         'page_title': "Taglines for " + tag,
+        'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
@@ -135,16 +130,24 @@ def list_taglines(tag: str) -> tuple[str, int]:
 
 
 @app.route('/', methods=['GET'])
+@check_index_integrity
 def list_notes() -> tuple[str, int]:
 
     search: str = request.args.get('search', "", str)
     filter_raw: str = request.args.get('filter', "", str)
     pg: int = request.args.get('pg', 1, int)
     nn: int = request.args.get('nn', cfg.get_num_notes_per_page(), int)
-    sk: str = request.args.get('sk', ('search' if len(search) else 'timestamp'), str)
+    sk: str = request.args.get('sk', 'timestamp', str)
     so: str = request.args.get('so', 'desc', str)
     time_min: str = request.args.get('time_min', idx.get_min_time(), str)
     time_max: str = request.args.get('time_max', str(datetime.datetime.now())[:10], str)
+    do_export: int = request.args.get('export', 0, int)
+
+    # defaults
+    if sk not in ('last_edit', 'relevance', 'timestamp'):
+        sk = 'timestamp'
+    if so not in ('asc', 'desc'):
+        so = 'desc'
 
     if len(search):
         search = unquote(search)
@@ -172,14 +175,14 @@ def list_notes() -> tuple[str, int]:
 
     # sort the list of notes
     fn = (lambda z: z.timestamp)  # default
-    if sk == 'search':
+    if sk == 'relevance':
         fn = (lambda z: z.score)
     if sk == 'last_edit':
         fn = (lambda z: z.last_edit_time)
-
     list_of_notes.sort(key=fn, reverse=(so == 'desc'))
-    date_histogram = make_date_histogram(list_of_notes, cfg.get_focal_color())
-    n_years = len(set([d['Date'][:4] for d in date_histogram]))
+
+    if do_export:
+        return export(list_of_notes, search, filter_raw)
 
     # paginate
     total_notes = len(list_of_notes)
@@ -231,6 +234,7 @@ def list_notes() -> tuple[str, int]:
     d = {'context': 'list', 'compact': cfg.get_list_compact(),  # compact flag is currently unused
          'page_title': page_title,
          'all_tags': all_tags, 'all_people': all_people,
+         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
          'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
          'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
          'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
@@ -238,8 +242,6 @@ def list_notes() -> tuple[str, int]:
          'pg': pg, 'nn': nn, 'total_notes': total_notes,
          'search_str': search, 'filter_str': ', '.join(filter_list),
          'notes_list': notes_list,
-         'date_histogram': date_histogram,
-         'n_years': n_years,
          'sk': sk,
          'so': so,
          'time_min': time_min,
@@ -250,6 +252,7 @@ def list_notes() -> tuple[str, int]:
 
 
 @app.route('/image/<int:note_id>/<int:img_num>')
+@check_index_integrity
 def read_image(note_id: int, img_num: int) -> Response:
     path, filename = Index.get_image_path(note_id, img_num, cfg)
     return send_file(os.path.join(path, filename), mimetype='image/png')
@@ -282,13 +285,14 @@ def apply_images(note_body: str, note_id: int) -> str:
     image_refs = map(int, re.findall("<([0123456789]+)>", note_body))
     for image_num in image_refs:
         u = "/image/{0}/{1}".format(note_id, image_num)
-        s = "<a href=\"{0}\" target=\"_new\"><img style=\"max-height:100px; max-width: 100%\" src=\"{0}\"></a>".format(
+        s = "<a href=\"{0}\" target=\"_new\"><img class=\"img_embedded\" src=\"{0}\"></a>".format(
             u)
         note_body = re.sub("<{0}>".format(image_num), s, note_body)
     return note_body
 
 
 @app.route('/note/<int:note_id>', methods=['GET'])
+@check_index_integrity
 def read_note(note_id: int) -> tuple[str, int]:
 
     try:
@@ -318,6 +322,7 @@ def read_note(note_id: int) -> tuple[str, int]:
          'img_refs': img_refs,
          'last_edit_dttm': str(last_edit_dttm)[:19],
          'page_title': note.title,
+         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
          'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
          'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
          'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
@@ -327,6 +332,7 @@ def read_note(note_id: int) -> tuple[str, int]:
 
 
 @app.route('/image_del/<int:note_id>/<int:img_num>')
+@check_index_integrity
 def delete_image(note_id: int, img_num: int) -> Response:
     path, filename = Index.get_image_path(note_id, img_num, cfg)
     os.unlink(os.path.join(path, filename))
@@ -335,6 +341,7 @@ def delete_image(note_id: int, img_num: int) -> Response:
 
 
 @app.route('/image_edit_list/<int:note_id>', methods=['GET'])
+@check_index_integrity
 def show_image_edit_list(note_id: int) -> tuple[str, int]:
 
     # if any images exist, put them at the bottom
@@ -343,6 +350,7 @@ def show_image_edit_list(note_id: int) -> tuple[str, int]:
     d = {
         'id': note_id,
         'img_refs': img_refs,
+        'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
@@ -352,6 +360,7 @@ def show_image_edit_list(note_id: int) -> tuple[str, int]:
 
 
 @app.route('/edit/<int:note_id>', methods=['GET'])
+@check_index_integrity
 def edit_note(note_id: int) -> tuple[str, int]:
 
     try:
@@ -359,11 +368,14 @@ def edit_note(note_id: int) -> tuple[str, int]:
     except FileNotFoundError:
         return "<html><body>File not found: {0}</body></html>".format(note_id), 404
 
+    starting_hash = hashlib.md5(note_body.encode("utf-8")).hexdigest()
+
     r = Index.lock_note(note_id, cfg)
 
     if not r:
         d = {
             'context': 'error',
+            'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
             'focal_color': cfg.get_focal_color(),
             'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
@@ -382,15 +394,18 @@ def edit_note(note_id: int) -> tuple[str, int]:
          'note_body': note_body,
          'page_title': note.title,
          'people_list': pl,
+         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
          'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
          'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
          'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
+         'starting_hash': starting_hash
          }
 
     return render_template("notes.html", **d), 200
 
 
 @app.route('/upload', methods=['POST'])
+@check_index_integrity
 def upload_image() -> Union[Response, tuple[str, int]]:
 
     id_ = request.form.get('id', 0, int)
@@ -419,25 +434,31 @@ def upload_image() -> Union[Response, tuple[str, int]]:
 
 
 @app.route('/config')
+@check_index_integrity
 def config() -> tuple[str, int]:
     d = {
         'context': 'config',
+        'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
         'focal_color': cfg.get_focal_color(),
         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
         'config_file_path': Config.get_config_file_name(),
-        'config_txt': pprint.pformat(Config.read_config_file())
+        'config_txt': pprint.pformat(Config.read_config_file()),
+        'index_path': idx.get_index_filename(),
+        'project_config_txt': pprint.pformat(idx.get_project_config())
     }
     return render_template("notes.html", **d), 200
 
 
 @app.route('/cancel/<int:note_id>', methods=['GET'])
+@check_index_integrity
 def cancel_edit(note_id: int) -> Union[Response, tuple[str, int]]:
     r = Index.unlock_note(note_id, cfg)
     if not r:
         d = {
             'context': 'error',
+            'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
             'focal_color': cfg.get_focal_color(),
             'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
@@ -451,15 +472,18 @@ def cancel_edit(note_id: int) -> Union[Response, tuple[str, int]]:
 
 
 @app.route('/save', methods=['POST'])
+@check_index_integrity
 def save_note() -> Union[Response, tuple[str, int]]:
 
     id_ = request.form.get('id', 0, int)
     text_ = request.form.get('big_text', "", str)
+    starting_hash = request.form.get('starting_hash', "", str)
 
     r = Index.unlock_note(id_, cfg)
     if not r:
         d = {
             'context': 'error',
+            'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
             'focal_color': cfg.get_focal_color(),
             'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
@@ -467,6 +491,23 @@ def save_note() -> Union[Response, tuple[str, int]]:
             'page_title': "Error: note {0} was not previously locked for edit.".format(id_),
             'message': "Error: note {0} was not previously locked for edit.<br /><br /><i>Lock file: {1}</i>".format(
                 id_, Index.get_lock_file_name(id_, cfg))
+        }
+        return render_template("notes.html", **d), 403
+
+    _, current_note_body = Index.read_note_file(id_, cfg)
+    current_hash = hashlib.md5(current_note_body.encode("utf-8")).hexdigest()
+
+    if starting_hash != current_hash:
+        d = {
+            'context': 'error',
+            'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
+            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
+            'focal_color': cfg.get_focal_color(),
+            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
+            'page_title': "Error: note {0} has changed unexpectedly!".format(id_),
+            'message': "Error: note {0} has changed unexpectedly!<br /><br /><i>Starting hash: {1}<br />Current hash: {2}</i><br /><br />File not saved, since doing so would overwrite more recent changes.  To save your changes, copy the raw markdown below into another file and try again.<br /><br /><pre style=\"background-color: #cccccc\">{3}</pre>".format(
+                id_, starting_hash, current_hash, escape(text_))
         }
         return render_template("notes.html", **d), 403
 
@@ -484,6 +525,7 @@ def save_note() -> Union[Response, tuple[str, int]]:
 
 
 @app.route('/delete', methods=['POST'])
+@check_index_integrity
 def delete_note() -> Response:
 
     id_ = request.form.get('id', 0, int)
@@ -501,6 +543,7 @@ def delete_note() -> Response:
 
 
 @app.route('/new', methods=['GET'])
+@check_index_integrity
 def new_note() -> Response:
     unix_time = idx.new_file()
     url = "/edit/{0}".format(unix_time)
@@ -508,6 +551,7 @@ def new_note() -> Response:
 
 
 @app.route('/clone/<int:note_id>', methods=['GET'])
+@check_index_integrity
 def clone_note(note_id: int) -> Union[Response, tuple[str, int]]:
     try:
         note, _ = Index.read_note_file(note_id, cfg)
@@ -520,9 +564,97 @@ def clone_note(note_id: int) -> Union[Response, tuple[str, int]]:
 
 
 @app.route('/reindex', methods=['GET'])
+@check_index_integrity
 def reindex() -> Response:
     idx.build(cfg)
     return redirect("/", code=302)
+
+
+def export(list_of_notes: list[Note], search_str: str, filter_str: str) -> tuple[str, int]:
+
+    dttm = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+    filename = 'notes_export_' + dttm + '.html'
+    export_file_path = os.path.join(cfg.get_base_path(), cfg.get_notes_dir(), filename)
+    num_notes = len(list_of_notes)
+
+    big_body = """<html>
+    <head>
+        <title>{0} notes exported at {1}</title>
+        <body>
+            <p>
+            <a name="contents" />
+            <h1>Contents</h1>
+            Search string: {2}
+            <br />
+            Query string: {3}
+            <br />
+            <br />
+            {0} notes exported {1}
+            <br />
+            <ul>           
+    """.format(num_notes, dttm, search_str or "(none)", filter_str or "(none)")
+
+    for n in list_of_notes:
+        big_body += "<li><a href=\"#note_{0}\">{1}</a></li>".format(n.timestamp, n.title)
+
+    big_body += "</ul></p>\n\n<hr />\n\n"
+
+    for n in list_of_notes:
+        _, note_body = Index.read_note_file(n.timestamp, cfg, parse=False)
+        note_body = apply_images(note_body, n.timestamp)
+        note_body_md = apply_markdown_and_links(note_body)
+        big_body += "<a name=\"note_{0}\" />".format(n.timestamp)
+        big_body += note_body_md
+        big_body += "<br /><a href=\"#contents\">back to top</a>\n\n<hr />\n\n"
+
+    footer = "</body></html>"
+
+    with open(export_file_path, 'w') as fp:
+        fp.write(big_body)
+
+    d = {
+        'context': 'export',
+        'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
+        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
+        'focal_color': cfg.get_focal_color(),
+        'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+        'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
+        'export_file_path': export_file_path, 'num_notes': num_notes
+    }
+    return render_template("notes.html", **d), 200
+
+@app.route('/project', methods=['GET'])
+@check_index_integrity
+def change_project() -> Union[Response, tuple[str, int]]:
+    global cfg, idx
+
+    project_name = request.args.get('project_name', None, str)
+    ok = cfg.set_active_project(project_name)
+
+    if not ok:
+        d = {
+            'context': 'error',
+            'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
+            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
+            'focal_color': cfg.get_focal_color(),
+            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
+            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
+            'page_title': "Error: Invalid or unknown project name: {0}".format(project_name),
+            'message': "Error: Invalid or unknown project name: {0}".format(project_name)
+        }
+        return render_template("notes.html", **d), 400
+
+    idx = Index()
+    idx.load(cfg)
+
+    return redirect("/", code=302)
+
+
+
+@app.route('/exit_cleanly', methods=['GET'])
+def exit_cleanly():
+    os.kill(os.getpid(), signal.SIGTERM)
+    return "<html><body>exit_cleanly</body></html>", 200
 
 
 def run_app(cfg_: Config) -> None:

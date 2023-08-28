@@ -4,12 +4,12 @@ import time
 import datetime
 import json
 from operator import itemgetter
+import hashlib
 import math
 import re
+
 from note import Note
 from config import Config
-import nltk
-from nltk.stem import WordNetLemmatizer
 
 
 class Index(object):
@@ -17,6 +17,7 @@ class Index(object):
     def __init__(self):
 
         self.cfg = None
+        self.hash_ = None
 
         self.notes: list[Note] = []
         self.tags = Counter()
@@ -26,6 +27,8 @@ class Index(object):
         self.tfidf_dfs = []
         self.tfidf_inv_idx = []
 
+        self.project_config = {}
+
         self.stopwords = {'a', 'all', 'an', 'and', 'as', 'at', 'be', 'but', 'by', 'do', 'for', 'from', 'have', 'he',
                           'her', 'his', 'i', 'if', 'in', 'it', 'my', 'not', 'of', 'on', 'one', 'or', 'she', 'so',
                           'that', 'the', 'their', 'there', 'they', 'this', 'to', 'we', 'what', 'will', 'with', 'would',
@@ -33,19 +36,34 @@ class Index(object):
 
         self.lem = None
 
+    def get_local_index_hash(self, cfg: Config):
+        filename = os.path.join(self.cfg.get_notes_dir(), 'index.json')
+        if not os.path.exists(filename):
+            return None
+        with open(filename, 'r') as fp:
+            body = fp.read()
+        hash_ = hashlib.md5(body.encode("utf-8"))
+        return hash_.hexdigest()
+
+    def get_project_config(self) -> dict:
+        return self.project_config
+
+    def get_index_filename(self) -> str:
+        return os.path.join(self.cfg.get_notes_dir(), 'index.json')
+
     def load(self, cfg: Config):
         self.cfg = cfg
-
-        if cfg.INDEX_STEMMING:
-            self.lem = WordNetLemmatizer()
+        hash_ = None
 
         try:
-            with open(os.path.join(self.cfg.get_base_path(), self.cfg.get_notes_dir(), 'index.json'), 'r') as fp:
+            with open(self.get_index_filename(), 'r') as fp:
                 b = fp.read()
                 obj = json.loads(b)
+                hash_ = hashlib.md5(b.encode("utf-8")).hexdigest()
         except FileNotFoundError:
             # create an empty index
-            obj = {'notes': [], 'tags': [], 'people': [], 'tfidf_vocab': [], 'tfidf_dfs': [], 'tfidf_inv_idx': []}
+            obj = {'project_config': {'index_trigrams': 1},
+                   'notes': [], 'tags': [], 'people': [], 'tfidf_vocab': [], 'tfidf_dfs': [], 'tfidf_inv_idx': []}
 
         self.notes = [Note(n['tags'], n['people'], n['title'], n['timestamp'], n['last_edit_time']) for n in obj['notes']]
         self.people = Counter(dict(obj['people']))
@@ -53,17 +71,27 @@ class Index(object):
         self.tfidf_vocab = obj['tfidf_vocab']
         self.tfidf_dfs = obj['tfidf_dfs']
         self.tfidf_inv_idx = obj['tfidf_inv_idx']
+        self.project_config = obj.get('project_config', {'index_trigrams': 1})
+        self.hash_ = hash_
 
     def save(self) -> None:
-        with open(os.path.join(self.cfg.get_base_path(), self.cfg.get_notes_dir(), 'index.json'), 'w') as fp:
-            fp.write(json.dumps({
+        try:
+            os.makedirs(self.cfg.get_notes_dir())
+        except FileExistsError:
+            pass
+        filename = os.path.join(self.cfg.get_notes_dir(), 'index.json')
+        with open(filename, 'w') as fp:
+            body = json.dumps({
+                "project_config": self.project_config,
                 "notes": [n.to_json() for n in self.notes],
                 "people": [(t, self.people[t]) for t in self.people],
                 "tags": [(t, self.tags[t]) for t in self.tags],
                 "tfidf_vocab": self.tfidf_vocab,
                 "tfidf_dfs": self.tfidf_dfs,
                 "tfidf_inv_idx": self.tfidf_inv_idx,
-            }))
+            })
+            fp.write(body)
+            self.hash_ = hashlib.md5(body.encode("utf-8")).hexdigest()
 
     def get_tags(self) -> list[(str, int)]:
         tag_list = [(t, self.tags[t]) for t in self.tags]
@@ -105,32 +133,13 @@ class Index(object):
                 trigram_list.append(trigram)
         return trigram_list
 
-    @staticmethod
-    def words_to_stemmed(words: list[str], lem: WordNetLemmatizer) -> list[str]:
-        lst = []
-
-        try:
-            lem.lemmatize("")
-        except LookupError:
-            nltk.download('wordnet')
-            nltk.download('omw-1.4')
-
-        for w in words:
-            lw = lem.lemmatize(w)
-            lst.append(lw)
-            # print("Lemmatized {0} -> {1}".format(w, lw))
-        return lst
-
     def _search(self, query: str) -> dict:
 
         doc_scores = {}
 
         words = re.split("[^a-z']", query.lower())
 
-        if self.cfg.INDEX_STEMMING:
-            words = Index.words_to_stemmed(words, self.lem)
-
-        if self.cfg.INDEX_TRIGRAMS:
+        if self.project_config['index_trigrams'] == 1:
             words += Index.words_to_trigrams(words)
 
         for w in set(words):
@@ -154,8 +163,14 @@ class Index(object):
         txt2 = re.sub("<!-- attendees: (.*) -->", "", txt2)
         txt2 = re.sub("<!-- time: (.*) -->", "", txt2)
 
+        url_regex = "https?://[a-zA-Z0123456789\\.#%\\/\\-_\\?&=]+"
+        txt2 = re.sub(url_regex, "", txt2)
+
         words = re.split("[^a-z0123456789']", txt2.lower())
-        words = [w for w in words if w != '' and w not in self.stopwords]
+
+        numbers_re = re.compile("^[0123456789]+$")
+
+        words = [w for w in words if w != '' and not numbers_re.match(w) and w not in self.stopwords]
         return words
 
     def build(self, cfg: Config) -> None:
@@ -171,7 +186,7 @@ class Index(object):
         word_indices = {}
         tfs = {}
         doc_freq = {}
-        for (dirpath, dirnames, filenames) in os.walk(os.path.join(self.cfg.get_base_path(), self.cfg.get_notes_dir())):
+        for (dirpath, dirnames, filenames) in os.walk(self.cfg.get_notes_dir()):
             for fn in filenames:
                 if fn.strip().endswith(".md"):
                     # index the note metadata
@@ -181,9 +196,7 @@ class Index(object):
 
                     # insert all the words into the dictionary
                     words = self.body_to_words(note_text)
-                    if self.cfg.INDEX_STEMMING:
-                        words = Index.words_to_stemmed(words, self.lem)
-                    if cfg.INDEX_TRIGRAMS:
+                    if self.project_config['index_trigrams'] == 1:
                         words += Index.words_to_trigrams(words)
                     for w in set(words):
                         idx = word_indices.get(w, -1)
@@ -299,9 +312,7 @@ class Index(object):
             tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
             _, body = self.read_note_file(note.timestamp, self.cfg, parse=False)
             words = self.body_to_words(body)
-            if self.cfg.INDEX_STEMMING:
-                words = Index.words_to_stemmed(words, self.lem)
-            if self.cfg.INDEX_TRIGRAMS:
+            if self.project_config['index_trigrams'] == 1:
                 words += Index.words_to_trigrams(words)
 
             ctr = Counter(words)
@@ -339,9 +350,7 @@ class Index(object):
             tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
             _, body = self.read_note_file(my_note.timestamp, self.cfg, parse=False)
             words = self.body_to_words(body)
-            if self.cfg.INDEX_STEMMING:
-                words = Index.words_to_stemmed(words, self.lem)
-            if self.cfg.INDEX_TRIGRAMS:
+            if self.project_config['index_trigrams'] == 1:
                 words += Index.words_to_trigrams(words)
             ctr = Counter(words)
             for w in ctr:
@@ -408,7 +417,7 @@ class Index(object):
     def get_path_from_timestamp(timestamp: int, cfg: Config) -> str:
         dttm = datetime.datetime.fromtimestamp(timestamp)
         y, m, d = str(dttm).split()[0].split('-')
-        path = os.path.join(cfg.get_base_path(), cfg.get_notes_dir(), y, m, d)
+        path = os.path.join(cfg.get_notes_dir(), y, m, d)
         return path
 
     @staticmethod

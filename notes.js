@@ -292,7 +292,7 @@ function form_submitter(e)
 {
     if (e.key == 'Enter')
     {
-        document.getElementById("list_form").submit();
+        submit_search_form();
     }
 }
 
@@ -410,14 +410,21 @@ function submit_list_form()
 }
 
 // by default a new search should sort by decreasing relevance
-function new_search() {
-    srch = document.getElementById('input_search').value;
+function submit_search_form()
+{
+    var input_sk = document.getElementById('input_sk');
+    var input_so = document.getElementById('input_so');
+    var srch = document.getElementById('input_search').value;
+
+    // default
+    input_sk.value = 'timestamp';
+    input_so.value = 'desc';
+
     if (srch.length > 0) {
-        var v = document.getElementById('input_sk');
-        v.value = 'search';
-        var w = document.getElementById('input_so');
-        w.value = 'desc';
+        input_sk.value = 'relevance';
+        input_so.value = 'desc';
     }
+
     submit_list_form();
 }
 
@@ -425,6 +432,12 @@ function re_sort_list()
 {
     document.getElementById('input_sk').value = document.getElementById('dropdown_sk').value;
     document.getElementById('input_so').value = document.getElementById('dropdown_so').value;
+    submit_list_form();
+}
+
+function export_notes()
+{
+    document.getElementById('input_export').value = 1;
     submit_list_form();
 }
 

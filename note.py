@@ -21,7 +21,7 @@ class Note(object):
     def get_file_name(self, cfg: Config) -> str:
         dttm = datetime.datetime.fromtimestamp(self.timestamp)
         y, m, d = str(dttm).split()[0].split('-')
-        path = os.path.join(cfg.get_base_path(), cfg.get_notes_dir(), y, m, d)
+        path = os.path.join(cfg.get_notes_dir(), y, m, d)
         fn = os.path.join(path, "{0}.md".format(self.timestamp))
         return fn
 
