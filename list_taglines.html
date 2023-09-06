@@ -1,0 +1,22 @@
+<div name="tagline_div" id="tagline_div">
+    <div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
+
+        <p><b>Taglines for tag <a style="color: {{ link_color }}" href="/?filter={{ tag_quot }}">{{ tag }}</a></b></p>
+        {% for note in tagline_list %}
+        <p>
+            <b><a style="color: {{ focal_color }}" href="/note/{{ note.timestamp }}">{{ note.title }}</a></b>
+
+            <br />
+            [ <a href="/edit/{{ note.timestamp }}">edit</a> ]
+
+            <br />
+            <span style="font-size: smaller">{{ note.dttm_str }}</span>
+            <ul>
+            {% for tagline in note.taglines %}
+                <li>{{ tagline|safe }}</li>
+            {% endfor %}
+            </ul>
+        </p>
+        {% endfor %}
+    </div><!-- scrollable_content_div -->
+</div><!-- tagline_div -->

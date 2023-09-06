@@ -36,6 +36,8 @@ class Index(object):
 
         self.lem = None
 
+        self.inlinks = {}
+
     def get_local_index_hash(self, cfg: Config):
         filename = os.path.join(self.cfg.get_notes_dir(), 'index.json')
         if not os.path.exists(filename):
@@ -63,7 +65,9 @@ class Index(object):
         except FileNotFoundError:
             # create an empty index
             obj = {'project_config': {'index_trigrams': 1},
-                   'notes': [], 'tags': [], 'people': [], 'tfidf_vocab': [], 'tfidf_dfs': [], 'tfidf_inv_idx': []}
+                   'notes': [], 'tags': [], 'people': [], 'tfidf_vocab': [], 'tfidf_dfs': [], 'tfidf_inv_idx': [],
+                   'inlinks': {}
+                   }
 
         self.notes = [Note(n['tags'], n['people'], n['title'], n['timestamp'], n['last_edit_time']) for n in obj['notes']]
         self.people = Counter(dict(obj['people']))
@@ -73,6 +77,7 @@ class Index(object):
         self.tfidf_inv_idx = obj['tfidf_inv_idx']
         self.project_config = obj.get('project_config', {'index_trigrams': 1})
         self.hash_ = hash_
+        self.inlinks = dict(obj['inlinks'])
 
     def save(self) -> None:
         try:
@@ -86,6 +91,7 @@ class Index(object):
                 "notes": [n.to_json() for n in self.notes],
                 "people": [(t, self.people[t]) for t in self.people],
                 "tags": [(t, self.tags[t]) for t in self.tags],
+                "inlinks": [(k, self.inlinks[k]) for k in self.inlinks.keys()],
                 "tfidf_vocab": self.tfidf_vocab,
                 "tfidf_dfs": self.tfidf_dfs,
                 "tfidf_inv_idx": self.tfidf_inv_idx,
@@ -179,6 +185,7 @@ class Index(object):
         self.notes = []
         self.tags = Counter()
         self.people = Counter()
+        self.inlinks = {}
 
         self.tfidf_vocab = []
         self.tfidf_dfs = []
@@ -192,7 +199,7 @@ class Index(object):
                     # index the note metadata
                     timestamp = int(os.path.split(fn)[-1][:-3])
                     note, note_text = Index.read_note_file(timestamp, self.cfg)
-                    self.add_note_to_index(note, save=False, add_to_search_index=False)
+                    self.add_note_to_index(note, note_text, save=False, add_to_search_index=False)
 
                     # insert all the words into the dictionary
                     words = self.body_to_words(note_text)
@@ -297,12 +304,19 @@ class Index(object):
         n = Note(tags, people, title, ts, last_edit_time)
         return n, b
 
-    def add_note_to_index(self, note: Note, save=True, add_to_search_index=True) -> None:
+    def add_note_to_index(self, note: Note, body: str, save=True, add_to_search_index=True) -> None:
         self.notes.append(note)
         for t in note.tags:
             self.tags[t] += 1
         for p in note.people:
             self.people[p] += 1
+
+        note_refs = list(map(int, re.findall("note:([0123456789]+)", body)))
+        for nr in note_refs:
+            if nr in self.inlinks:
+                self.inlinks[nr].append(note.timestamp)
+            else:
+                self.inlinks[nr] = [note.timestamp]
 
         # if this is being added as part of rebuilding the index, we do not
         # want to do this, because the search index is actually in the process of
@@ -310,7 +324,6 @@ class Index(object):
         # search index
         if add_to_search_index:
             tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
-            _, body = self.read_note_file(note.timestamp, self.cfg, parse=False)
             words = self.body_to_words(body)
             if self.project_config['index_trigrams'] == 1:
                 words += Index.words_to_trigrams(words)
@@ -338,47 +351,47 @@ class Index(object):
         if save:
             self.save()
 
-    def remove_note_from_index(self, timestamp: int, save=True) -> None:
-        my_note = None
-        for note in self.notes:
-            if note.timestamp == timestamp:
-                my_note = note
-                break
-        if my_note:
+    def remove_note_from_index(self, old_note_id: int, save=True) -> None:
 
-            # remove doc from search index
-            tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
-            _, body = self.read_note_file(my_note.timestamp, self.cfg, parse=False)
-            words = self.body_to_words(body)
-            if self.project_config['index_trigrams'] == 1:
-                words += Index.words_to_trigrams(words)
-            ctr = Counter(words)
-            for w in ctr:
+        old_note, old_body = Index.read_note_file(old_note_id, self.cfg, parse=True)
 
-                # skip words not currently in the vocabulary
-                # (this will get fixed upon reindexing)
-                widx = tmp_dict.get(w, -1)
-                if widx == -1:
-                    continue
+        # remove doc from search index
+        tmp_dict = dict(zip(self.tfidf_vocab, range(len(self.tfidf_vocab))))
+        words = self.body_to_words(old_body)
+        if self.project_config['index_trigrams'] == 1:
+            words += Index.words_to_trigrams(words)
+        ctr = Counter(words)
+        for w in ctr:
 
-                # remove from document frequencies
-                self.tfidf_dfs[widx] -= 1
+            # skip words not currently in the vocabulary
+            # (this will get fixed upon reindexing)
+            widx = tmp_dict.get(w, -1)
+            if widx == -1:
+                continue
 
-                # remove from the inverted index
-                self.tfidf_inv_idx[widx] = [_ for _ in self.tfidf_inv_idx[widx] if _[0] != my_note.timestamp]
+            # remove from document frequencies
+            self.tfidf_dfs[widx] -= 1
 
-            # remove note's tags from tag and people counts (and list if necessary)
-            for t in my_note.tags:
-                self.tags[t] -= 1
-                if self.tags[t] == 0:
-                    del self.tags[t]
-            for p in my_note.people:
-                self.people[p] -= 1
-                if self.people[p] == 0:
-                    del self.people[p]
+            # remove from the inverted index
+            self.tfidf_inv_idx[widx] = [_ for _ in self.tfidf_inv_idx[widx] if _[0] != old_note.timestamp]
 
-            # finally, remove the note from the list of notes
-            self.notes.remove(my_note)
+        # remove note's tags from tag and people counts (and list if necessary)
+        for t in old_note.tags:
+            self.tags[t] -= 1
+            if self.tags[t] == 0:
+                del self.tags[t]
+        for p in old_note.people:
+            self.people[p] -= 1
+            if self.people[p] == 0:
+                del self.people[p]
+
+        note_refs = list(map(int, re.findall("note:([0123456789]+)", old_body)))
+        for nr in note_refs:
+            self.inlinks[nr] = [v for v in self.inlinks[nr] if v != old_note.timestamp]
+
+        # finally, remove the note from the list of notes
+        old_note_object = [n for n in self.notes if n.timestamp == old_note_id][0]  # should be exactly one
+        self.notes.remove(old_note_object)
 
         if save:
             self.save()
@@ -466,5 +479,5 @@ class Index(object):
 
         Index.save_note_file(u, template, self.cfg)
         n = Note((tag_list or []), (people_list or []), (title or '(untitled)'), u, u)
-        self.add_note_to_index(n)
+        self.add_note_to_index(n, template)
         return u

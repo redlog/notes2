@@ -8,15 +8,8 @@ class Config(object):
     def __init__(self):
         # defaults
         self.DEFAULT_BASE_PATH = os.path.join(pathlib.Path.home(), 'localnotes')
-        self.LINK_COLOR = "#556B2F"
-        self.ALERT_COLOR = "#FF0000"
-        self.FOCAL_COLOR = "#4C3017"
-        self.TEXT_COLOR = "#1D0F01"
-        self.BACKGROUND_COLOR = "#F5F5F5"
         self.DEFAULT_NN = 25
         self.HTTP_PORT = 80
-        self.HEADER_COLOR = "#A0A0A0"  # "#C6893E"
-        self.SIDEBAR_COLOR = "#CBC7C4"
         self.USAGE_STATS = 0
         self.LIST_COMPACT = 0
         self.ACTIVE_PROJECT = None
@@ -49,13 +42,6 @@ class Config(object):
             cfg = Config.read_config_file()
 
         # when necessary populate it with defaults
-        self.LINK_COLOR = cfg.get('LINK_COLOR', self.LINK_COLOR)
-        self.ALERT_COLOR = cfg.get('ALERT_COLOR', self.ALERT_COLOR)
-        self.FOCAL_COLOR = cfg.get('FOCAL_COLOR', self.FOCAL_COLOR)
-        self.BACKGROUND_COLOR = cfg.get('BACKGROUND_COLOR', self.BACKGROUND_COLOR)
-        self.HEADER_COLOR = cfg.get('HEADER_COLOR', self.HEADER_COLOR)
-        self.SIDEBAR_COLOR = cfg.get('SIDEBAR_COLOR', self.SIDEBAR_COLOR)
-        self.TEXT_COLOR = cfg.get('TEXT_COLOR', self.TEXT_COLOR)
         self.DEFAULT_NN = cfg.get('DEFAULT_NN', self.DEFAULT_NN)
         self.HTTP_PORT = cfg.get('HTTP_PORT', self.HTTP_PORT)
         self.USAGE_STATS = cfg.get('USAGE_STATS', self.USAGE_STATS)
@@ -76,8 +62,8 @@ class Config(object):
             self.PROJECT_LIST = [
                 {'PROJECT_NAME': 'default_project',
                  'PROJECT_PATH': os.path.join(self.DEFAULT_BASE_PATH, "default_project")
-                }
-                ]
+                 }
+            ]
             self.ACTIVE_PROJECT = "default_project"
 
         project_names = [d['PROJECT_NAME'] for d in self.PROJECT_LIST]
@@ -100,13 +86,6 @@ class Config(object):
             pass
         with open(fn, 'w') as fp:
             b = json.dumps({
-                'LINK_COLOR': self.LINK_COLOR,
-                'ALERT_COLOR': self.ALERT_COLOR,
-                'FOCAL_COLOR': self.FOCAL_COLOR,
-                'TEXT_COLOR': self.TEXT_COLOR,
-                'BACKGROUND_COLOR': self.BACKGROUND_COLOR,
-                'HEADER_COLOR': self.HEADER_COLOR,
-                'SIDEBAR_COLOR': self.SIDEBAR_COLOR,
                 'DEFAULT_NN': self.DEFAULT_NN,
                 'HTTP_PORT': self.HTTP_PORT,
                 'USAGE_STATS': self.USAGE_STATS,
@@ -130,27 +109,6 @@ class Config(object):
 
     def get_notes_dir(self) -> str:
         return self.active_notes_dir
-
-    def get_alert_color(self) -> str:
-        return self.ALERT_COLOR
-
-    def get_background_color(self) -> str:
-        return self.BACKGROUND_COLOR
-
-    def get_link_color(self) -> str:
-        return self.LINK_COLOR
-
-    def get_text_color(self) -> str:
-        return self.TEXT_COLOR
-
-    def get_focal_color(self) -> str:
-        return self.FOCAL_COLOR
-
-    def get_header_color(self) -> str:
-        return self.HEADER_COLOR
-
-    def get_sidebar_color(self) -> str:
-        return self.SIDEBAR_COLOR
 
     def get_http_port(self) -> int:
         return self.HTTP_PORT

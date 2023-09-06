@@ -1,8 +1,11 @@
-A { text-decoration: none; }
-A:hover {text-decoration: underline; }
-body { margin: 0px; }
-.msg_body { font-size: smaller; display: none; }
-form { margin: 0em; }
+
+a {
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
 
 img {
     border: 1px solid #888888;
@@ -18,26 +21,15 @@ img {
     max-width: 100%;
 }
 
-td, th {
-    border: 1px solid black;
-    padding: 8px;
-}
-
-.counter_table td {
-    border: none;
-    padding: 0px;
-}
-
-.header_table td {
-    border: none;
-    padding: 0px;
-}
 
 table.counter_table td:nth-child(2) {
     text-align: right;
 }
 
+.msg_body { font-size: smaller; display: none; }
+
 .txt_mono {
+    font-family: monospace;
 }
 
 .txt_sans {

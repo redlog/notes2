@@ -1,0 +1,117 @@
+				<!-- navigation table -->
+				<table  class="header_table"  width="100%">
+					<tr>
+						<td colspan="3">
+        				<div class="focal" style="text-align: center; font-size: small; text-decoration: italic">
+							{% if total_notes == 0 %}
+								(no notes)
+							{% else %}
+								Showing notes {{ min_note + 1 }}-{{ max_note + 1 }} of {{ total_notes }}
+							{% endif %}
+						</div>
+						{% if filter_str|length > 0 %}
+        				<div class="alert" style="text-align: center; font-size: small; text-decoration: italic">
+							Filter: {{ filter_str }}
+						</div>
+						{% endif %} {# filterstr #}
+
+						{% if search_str|length > 0 %}
+        				<div class="alert" style="text-align: center; font-size: small; text-decoration: italic">
+							Search: {{ search_str }}
+						</div>
+						{% endif %} {# search str #}
+						<div class="focal" style="text-align: center; font-size: small; text-decoration: italic">
+							<a href="#" onclick="javascript:export_notes();">export this result set</a>
+						</div>
+						</td>
+
+					</tr>
+					<tr>
+						<td align="left">
+							{% if pg > 1 %}
+							<a href="javascript:go_to_page({{ pg - 1 }});">&lt; Prev</a>
+							{% else %}
+							&lt; Prev
+							{% endif %}
+						</td>
+						<td>
+							<p style="text-align: center;">
+							Pages:
+							{% for n in range(1, n_pages + 1) %}
+								{% if n == pg %}
+								{{ n }}
+								{% else %}
+								<a href="javascript:go_to_page({{ n }});">{{ n }}</a>
+								{% endif %}
+							{% endfor %}
+							</p>
+						</td>
+						<td align="right">
+							{% if pg < n_pages %}
+							<a href="javascript:go_to_page({{ pg + 1 }});">Next &gt;</a>
+							{% else %}
+							Next &gt;
+							{% endif %}
+						</td>
+					</tr>
+					<tr>
+						<td colspan="3" style="align:center">
+							<div style="text-align: center">
+							<a href="javascript:expand_messages();">expand</a> | <a href="javascript:collapse_messages();">collapse</a>
+							&nbsp; &nbsp; &nbsp; &nbsp;
+							<a href="javascript:display_compact();">compact</a> | <a href="javascript:display_comfortable();">comfortable</a>
+							&nbsp; &nbsp; &nbsp; &nbsp;
+							Sort by:
+							<select name="sk" id="dropdown_sk">
+								<option value="timestamp">Timestamp</option>
+								<option value="last_edit">Last Edit</option>
+								{% if search_str|length > 0 %}
+								<option value="relevance">Relevance</option>
+								{% endif %}
+							</select>
+							<select name="so" id="dropdown_so">
+								<option value="asc">Asc</option>
+								<option value="desc">Desc</option>
+							</select>
+							<input type="button" onclick="javascript:re_sort_list();" value="Go">
+							<script language="javascript">
+						  		document.getElementById("dropdown_so").value = "{{ so }}";
+						  		document.getElementById("dropdown_sk").value = "{{ sk }}";
+							</script>
+							</div>
+						</td>
+					</tr>
+				</table><!-- navigation -->
+				<hr />
+
+				<div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
+
+				<!-- note text -->
+				{% for note in notes_list %}
+				<div>
+					<a style="color: {{ focal_color }}" href="/note/{{ note.timestamp }}">{{ note.title }}</a></b>
+					<span class="comfortable"><br /></span>
+					<span style="font-size: smaller">
+						<span class="compact">&nbsp; | &nbsp;</span>
+						{{ note.dttm_str }} &nbsp; | &nbsp;
+						{% if sk == "last_edit" %}
+						last edit: {{ note.last_edit_str }}  &nbsp; | &nbsp;
+						{% endif %}
+						{% if search_str|length > 0 %}
+						relevance: {{ "%.4f"|format(note.score|float) }}  &nbsp; | &nbsp;
+						{% endif %}
+						{% for tag_quot, tag in note.tag_list %}
+							<a href="/?filter={{ tag_quot }}">{{ tag }}</a> &nbsp; | &nbsp;
+						{% endfor %}
+						{% for p_quot, p in note.people_list %}
+							<a href="/?filter={{ p_quot }}">{{ p }}</a> &nbsp; | &nbsp;
+						{% endfor %}
+						<a href="/edit/{{ note.timestamp }}">edit</a> &nbsp; | &nbsp; <a href="/clone/{{ note.timestamp }}">clone</a>
+					</span>
+				</div>
+				<span class="msg_body">{{ note.note_body_md|safe }}<hr /></span>
+				<span class="comfortable"><p></p></span>
+				{% endfor %}
+
+				</div><!-- end of scrollable content div -->
+

@@ -15,7 +15,7 @@ class WxTaskBarIcon(TaskBarIcon):
     def __init__(self, frame):
         TaskBarIcon.__init__(self)
         self.frame = frame
-        self.SetIcon(wx.Icon('localnotes_icon.png', wx.BITMAP_TYPE_PNG), 'Localnotes')
+        self.SetIcon(wx.Icon('static/localnotes_icon.png', wx.BITMAP_TYPE_PNG), 'Localnotes')
         self.Bind(wx.EVT_MENU, self.OnTaskBarOpen, id=1)
         self.Bind(wx.EVT_MENU, self.OnTaskBarClose, id=2)
 
@@ -40,7 +40,7 @@ class WxTaskBarIcon(TaskBarIcon):
 class WxFrame(wx.Frame):
     def __init__(self, parent, id, title):
         wx.Frame.__init__(self, parent, id, title, (-1, -1), (290, 280))
-        self.SetIcon(wx.Icon('localnotes_icon.png', wx.BITMAP_TYPE_PNG))
+        self.SetIcon(wx.Icon('static/localnotes_icon.png', wx.BITMAP_TYPE_PNG))
         self.SetSize((350, 250))
         self.tskic = WxTaskBarIcon(self)
         self.Bind(wx.EVT_CLOSE, self.OnClose)

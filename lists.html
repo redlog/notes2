@@ -1,0 +1,60 @@
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-auto bg-light" name="tags_div" id="tags_div">
+			<b>All Tags</b>
+				<br />
+					<a href="javascript:table_sort('all_tag_table', 'all_tag_tbody', 'name_order');">abc</a>
+					|
+					<a href="javascript:table_sort('all_tag_table', 'all_tag_tbody', 'count_order');">123</a>
+					|
+					<a href="javascript:show_tag_filter_span();">filter</a>
+					<span id="tag_filter_span" style="display:none"><br><input type="text" size="10" id="tag_filter_text" name="tag_filter_text" /></span>
+					<hr />
+				<div id="scrollable_tags_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
+				<table id="all_tag_table" class="counter_table">
+					<tbody id="all_tag_tbody">
+				{% for tag_quot, tag, ct in all_tags %}
+					<tr onmouseover="show_tl('{{ tag_quot }}');" onmouseout="hide_tl('{{ tag_quot }}');"><td><a href="/?filter={{ tag_quot }}">{{ tag }}</a><span style="visibility:hidden" id="tag_tl_span_{{ tag_quot }}"> &nbsp; <a href="/tagline/{{ tag_quot }}">TL</a></span></td><td>{{ ct }}</td></tr>
+				{% endfor %}
+					</tbody>
+				</table>
+				<input type="hidden" id="all_tag_table_name_order" value="asc">
+				<input type="hidden" id="all_tag_table_count_order" value="desc">
+				</div><!-- scrollable tag  div -->
+        </div>
+			<div class="col-auto bg-light" name="people_div" id="people_div">
+			<b>All People</b>
+				<br />
+					<a href="javascript:table_sort('all_people_table', 'all_people_tbody', 'name_order');">abc</a>
+					|
+					<a href="javascript:table_sort('all_people_table', 'all_people_tbody', 'count_order');">123</a>
+					|
+					<a href="javascript:show_people_filter_span();">filter</a>
+					<span id="people_filter_span" style="display:none"><br><input type="text" size="10" id="people_filter_text" name="people_filter_text" /></span>
+					<hr />
+				<div id="scrollable_people_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
+				<table id="all_people_table" class="counter_table">
+						<tbody id="all_people_tbody">
+				{% for p_quot, p, ct in all_people %}
+					<tr><td><a href="/?filter={{ p_quot }}">{{ p }}</a></td><td>{{ ct }}</td></tr>
+				{% endfor %}
+						</tbody>
+				</table>
+				<input type="hidden" id="all_people_table_name_order" value="asc">
+				<input type="hidden" id="all_people_table_count_order" value="desc">
+				</div><!-- scrollable people div -->
+			</div>
+
+        <div class="col-xl" name="list_div" id="list_div">
+
+            {% if context == 'tagline' %}
+                {% include 'list_taglines.html' %}
+            {% endif %}
+
+            {% if context == 'list' %}
+                {% include 'list_notes.html' %}
+            {% endif %}
+
+        </div>
+    </div>
+</div>

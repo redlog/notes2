@@ -31,7 +31,7 @@ idx: Index = None
 
 @app.route('/favicon.ico')
 def favicon():
-    return send_file("localnotes_icon.png", mimetype='image/png')
+    return send_file("static/localnotes_icon.png", mimetype='image/png')
 
 
 def matches_filter(note: Note, filter_list: list[str]):
@@ -122,9 +122,6 @@ def list_taglines(tag: str) -> tuple[str, int]:
         'tagline_list': tagline_list,
         'page_title': "Taglines for " + tag,
         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
-        'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-        'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
     }
     return render_template('notes.html', **d), 200
 
@@ -235,9 +232,6 @@ def list_notes() -> tuple[str, int]:
          'page_title': page_title,
          'all_tags': all_tags, 'all_people': all_people,
          'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
-         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
          'min_note': min_, 'max_note': max_, 'n_pages': n_pages,
          'pg': pg, 'nn': nn, 'total_notes': total_notes,
          'search_str': search, 'filter_str': ', '.join(filter_list),
@@ -265,12 +259,17 @@ def apply_markdown_and_links(note_body: str) -> str:
     # check note body of references to other notes, to tags, and to people
     note_refs = re.findall("note:([0123456789]+)", note_body_md)
     for note_ref in note_refs:
-        # TODO: check to see if it's faster to read the file, or walk the list of notes in the index
-        try:
-            note_ref_note, _ = Index.read_note_file(int(note_ref), cfg)
+        nr = int(note_ref)
+        title = None
+        for note in idx.notes:
+            if note.timestamp == nr:
+                title = note.title
+                break
+
+        if title:
             note_body_md = re.sub("note:{0}".format(note_ref),
-                                  "<a href=\"/note/{0}\">{1}</a>".format(note_ref, note_ref_note.title), note_body_md)
-        except FileNotFoundError:
+                                  "<a href=\"/note/{0}\">{1}</a>".format(note_ref, title), note_body_md)
+        else:
             note_body_md = re.sub("note:{0}".format(note_ref),
                                   "<u>Note not found! {0}</u>".format(note_ref), note_body_md)
 
@@ -312,6 +311,13 @@ def read_note(note_id: int) -> tuple[str, int]:
     dttm = datetime.datetime.fromtimestamp(note_id)
     last_edit_dttm = datetime.datetime.fromtimestamp(note.get_last_edit_time())
 
+    inlinks_ids = idx.inlinks.get(note_id, [])
+    inlinks = []
+    for ilid in inlinks_ids:
+        title = [n.title for n in idx.notes if n.timestamp == ilid][0]  # should happen exactly once
+        t = (ilid, title)
+        inlinks.append(t)
+
     d = {'context': 'read',
          'id': note_id,
          'tag_list': [(quote(t), t) for t in note.tags],
@@ -320,12 +326,10 @@ def read_note(note_id: int) -> tuple[str, int]:
          'filename': note.get_file_name(cfg),
          'note_body_md': note_body_md,
          'img_refs': img_refs,
+         'inlinks': inlinks,
          'last_edit_dttm': str(last_edit_dttm)[:19],
          'page_title': note.title,
          'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
-         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
          }
 
     return render_template("notes.html", **d), 200
@@ -351,9 +355,6 @@ def show_image_edit_list(note_id: int) -> tuple[str, int]:
         'id': note_id,
         'img_refs': img_refs,
         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
-        'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-        'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
     }
 
     return render_template("image_edit_list.html", **d), 200
@@ -376,10 +377,6 @@ def edit_note(note_id: int) -> tuple[str, int]:
         d = {
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
-            'focal_color': cfg.get_focal_color(),
-            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
             'page_title': "Error: note {0} is being edited in another window.".format(note_id),
             'message': "Error: note {0} is being edited in another window.<br /><br /><i>Lock file: {1}</i>".format(
                 note_id, Index.get_lock_file_name(note_id, cfg))
@@ -395,9 +392,6 @@ def edit_note(note_id: int) -> tuple[str, int]:
          'page_title': note.title,
          'people_list': pl,
          'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-         'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(), 'focal_color': cfg.get_focal_color(),
-         'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-         'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
          'starting_hash': starting_hash
          }
 
@@ -439,10 +433,6 @@ def config() -> tuple[str, int]:
     d = {
         'context': 'config',
         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
-        'focal_color': cfg.get_focal_color(),
-        'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-        'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
         'config_file_path': Config.get_config_file_name(),
         'config_txt': pprint.pformat(Config.read_config_file()),
         'index_path': idx.get_index_filename(),
@@ -459,10 +449,6 @@ def cancel_edit(note_id: int) -> Union[Response, tuple[str, int]]:
         d = {
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
-            'focal_color': cfg.get_focal_color(),
-            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
             'page_title': "Error: note {0} was not previously locked for edit.".format(note_id),
             'message': "Error: note {0} was not previously locked for edit.<br /><br /><i>Lock file: {1}</i>".format(
                 note_id, Index.get_lock_file_name(note_id, cfg))
@@ -484,27 +470,19 @@ def save_note() -> Union[Response, tuple[str, int]]:
         d = {
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
-            'focal_color': cfg.get_focal_color(),
-            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
             'page_title': "Error: note {0} was not previously locked for edit.".format(id_),
             'message': "Error: note {0} was not previously locked for edit.<br /><br /><i>Lock file: {1}</i>".format(
                 id_, Index.get_lock_file_name(id_, cfg))
         }
         return render_template("notes.html", **d), 403
 
-    _, current_note_body = Index.read_note_file(id_, cfg)
+    current_note, current_note_body = Index.read_note_file(id_, cfg, parse=False)
     current_hash = hashlib.md5(current_note_body.encode("utf-8")).hexdigest()
 
     if starting_hash != current_hash:
         d = {
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
-            'focal_color': cfg.get_focal_color(),
-            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
             'page_title': "Error: note {0} has changed unexpectedly!".format(id_),
             'message': "Error: note {0} has changed unexpectedly!<br /><br /><i>Starting hash: {1}<br />Current hash: {2}</i><br /><br />File not saved, since doing so would overwrite more recent changes.  To save your changes, copy the raw markdown below into another file and try again.<br /><br /><pre style=\"background-color: #cccccc\">{3}</pre>".format(
                 id_, starting_hash, current_hash, escape(text_))
@@ -512,14 +490,14 @@ def save_note() -> Union[Response, tuple[str, int]]:
         return render_template("notes.html", **d), 403
 
     # remove the old one from the index
-    idx.remove_note_from_index(id_, save=False)
+    idx.remove_note_from_index(current_note.timestamp, save=False)
 
     # overwrite, then get a new note object
     Index.save_note_file(id_, text_, cfg)
-    note, _ = Index.read_note_file(id_, cfg)
+    new_note_obj, new_body = Index.read_note_file(id_, cfg)
 
     # update the index for the revised note
-    idx.add_note_to_index(note)
+    idx.add_note_to_index(new_note_obj, new_body)
 
     return redirect("/note/{0}".format(id_), code=302)
 
@@ -607,7 +585,7 @@ def export(list_of_notes: list[Note], search_str: str, filter_str: str) -> tuple
         big_body += note_body_md
         big_body += "<br /><a href=\"#contents\">back to top</a>\n\n<hr />\n\n"
 
-    footer = "</body></html>"
+    big_body += "</body></html>"
 
     with open(export_file_path, 'w') as fp:
         fp.write(big_body)
@@ -615,13 +593,10 @@ def export(list_of_notes: list[Note], search_str: str, filter_str: str) -> tuple
     d = {
         'context': 'export',
         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-        'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
-        'focal_color': cfg.get_focal_color(),
-        'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-        'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
         'export_file_path': export_file_path, 'num_notes': num_notes
     }
     return render_template("notes.html", **d), 200
+
 
 @app.route('/project', methods=['GET'])
 @check_index_integrity
@@ -635,10 +610,6 @@ def change_project() -> Union[Response, tuple[str, int]]:
         d = {
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-            'link_color': cfg.get_link_color(), 'alert_color': cfg.get_alert_color(),
-            'focal_color': cfg.get_focal_color(),
-            'background_color': cfg.get_background_color(), 'text_color': cfg.get_text_color(),
-            'header_color': cfg.get_header_color(), 'sidebar_color': cfg.get_sidebar_color(),
             'page_title': "Error: Invalid or unknown project name: {0}".format(project_name),
             'message': "Error: Invalid or unknown project name: {0}".format(project_name)
         }
@@ -648,7 +619,6 @@ def change_project() -> Union[Response, tuple[str, int]]:
     idx.load(cfg)
 
     return redirect("/", code=302)
-
 
 
 @app.route('/exit_cleanly', methods=['GET'])

@@ -1,0 +1,73 @@
+<div name="read_info_div" id="read_info_div">
+<table class="header_table" style="width:100%">
+<tr><td>
+Tags:
+{% for tag_quot, tag in tag_list %}
+<a href="/?filter={{ tag_quot }}">{{ tag }}</a>
+{% endfor %}
+<br />
+Attendees:
+{% for p_quot, p in people_list %}
+<a href="/?filter={{ p_quot }}">{{ p }}</a>
+{% endfor %}
+<br />
+Created: {{ timestamp_str }}<br />
+Modified: {{ last_edit_dttm }}</i> <br />
+Filename: {{ filename }}<br />
+<a href="/edit/{{ id }}">edit</a> &nbsp;
+| &nbsp; <a href="/clone/{{ id }}">clone</a> &nbsp;
+| &nbsp; <a class="alert" href="javascript:expand_delete();">delete</a>
+<form id="delete_form" style="display: none" name="delete_form" action="/delete" method="POST",
+    enctype="application/x-www-form-urlencoded">
+<br /><br />
+Type "delete" to confirm:
+<input type="hidden" name="id" id="id" value="{{ id }}" />
+<input type="text" name="delete_text" id="delete_text" />
+<input type="submit" value="Delete" />
+</form>
+</td><td style="text-align:right;vertical-align:bottom">
+Info pane:<br /><a href="javascript:info_pane_show();">show</a> | <a href="javascript:info_pane_hide();">hide</a>
+</td>
+</tr></table>
+</div> <!-- read_info_div -->
+
+<br style="clear: both;" />
+<hr />
+
+<div id="flex_div" style="display: flex">
+
+<div style="flex-grow: 1; padding: 12px" name="read_text_div" id="read_text_div">
+{{ note_body_md|safe }}
+</div>
+
+<div style="flex-grow: 0; padding: 12px;" name="show_images_div" id="show_images_div">
+
+    {% if img_refs|length > 0 %}
+
+        <p><b>Images ({{ img_refs|length }}):</b></p>
+
+        {% for img_ref in img_refs %}
+        <p>
+            <a href="/image/{{ id }}/{{ img_ref }}" target="_new"><img class="img_footer" src="/image/{{ id }}/{{ img_ref }}"></a>
+        </p>
+        {% endfor %}
+
+    {% endif %}
+
+</div>
+
+    <div style="flex-grow: 0; padding: 12px" name="ul_info_div" id="ul_info_div">
+        <b>What links here</b>
+            {% if inlinks|length > 0 %}
+                <ul>
+                    {% for inlink_id, inlink_title in inlinks %}
+                    <li><a href="/note/{{ inlink_id }}" target="_new">{{ inlink_title }}</a></li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <ul><li>(no inlinks)</li></ul>
+            {% endif %}
+    </div>
+
+    </div><!-- flex_div -->
+<hr />

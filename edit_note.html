@@ -1,0 +1,34 @@
+<div id="edit_flex" style="display:flex">
+
+    <div id="people_autocomplete_div" style="display:none">
+        <div style="background-color:#dddddd;padding:8px">
+        <b>Name Search: </b>
+        <input type="text" id="people_autocomplete_text_field" name="people_autocomplete_text_field">
+        </div>
+    </div>
+
+    <div style="flex-grow: 1; padding: 12px;" name="edit_div" id="edit_div">
+
+        <p style="text-align: center;">
+        Font:
+        <a href="javascript:textarea_mono();">mono</a> |
+        <a href="javascript:textarea_sans();">sans</a> |
+        <a href="javascript:textarea_serif();">serif</a>
+        &nbsp; &nbsp; &nbsp;
+        Image pane: <a href="javascript:image_edit_frame_show();">show</a> | <a href="javascript:image_edit_frame_hide();">hide</a>
+        </p>
+
+        <form id="save_form" action="/save" method="POST" enctype="application/x-www-form-urlencoded">
+        <input type="hidden" id="id" name="id" value="{{ id }}" />
+        <input type="hidden" id="starting_hash" name="starting_hash" value="{{ starting_hash }}" />
+        <textarea class="txt_sans" style="width: 100%; height: 80vh;" form="save_form" id="big_text" name="big_text">{{ note_body }}</textarea>
+        <br />
+        <input type="submit" value="Save" />
+        </form>
+        <button onclick="window.location.href='/cancel/{{ id }}';">Cancel</button>
+    </div>
+    <div style="flex-grow: 0; padding: 12px; display:none" name="ul_image_div" id="ul_image_div">
+        <iframe style="height: 80vh" src="/image_edit_list/{{ id }}" title=""></iframe>
+    </div>
+
+</div><!-- edit flex -->

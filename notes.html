@@ -1,6 +1,8 @@
 <!doctype html>
 <html>
 	<head>
+		<meta charset="utf-8">
+	    <meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>
 			Localnotes
 			{% if page_title|length > 0 %}
@@ -11,15 +13,17 @@
 			{% endif %}
 			{{ page_title }}
 		</title>
-		<link rel="stylesheet" href="{{ url_for('static', filename = 'notes.css') }}" />
 		<link rel="stylesheet" href="http://code.jquery.com/ui/1.13.1/themes/base/jquery-ui.css" />
-		<link rel="shortcut icon" href="/favicon.ico">
+		<link rel="stylesheet" href="/static/bootstrap.min.css">
+		<link rel="stylesheet" href="{{ url_for('static', filename = 'notes.css') }}" />
 
+		<link rel="shortcut icon" href="/favicon.ico">
 
 		<script src="https://code.jquery.com/jquery-3.6.0.js"></script>
 		<script src="https://code.jquery.com/ui/1.13.1/jquery-ui.js"></script>
 	    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/5.9.2/d3.js"></script>
 	    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-color/1.2.1/d3-color.js"></script>
+		<script src="/static/bootstrap.bundle.min.js"></script>
 
 		<script language="javascript">
 				{% if context == 'edit' %}
@@ -36,428 +40,40 @@
   		$( function() { $( "#input_time_max" ).datepicker( { dateFormat: "yy-mm-dd" } ); } );
 		</script>
 
-
-		<style>
-			a { color: {{ link_color }} }
-			.alert { color: {{ alert_color }} }
-			.focal { color: {{ focal_color }} }
-			p, span, div, font {
-				color: {{ text_color }}
-			}
-		</style>
 	</head>
 
-	<body style="background-color: {{ background_color }};" onload="javascript:page_load('{{ context }}')">
+	<body onload="javascript:page_load('{{ context }}')">
 
-		<!-- header bar -->
-		<div style="background-color: {{ header_color }}; padding: 12px" id="header_div" name="header_div">
-			<table class="header_table" style="width: 100%">
-				<tr>
-					<td style="width: 20%"><b><a href="/">Localnotes</a></b></td>
-					<td style="width: 60%" align="center">
-						<!-- TODO: make this table divs so the form doesn't complain -->
-						<form name="list_form" id="list_form" action="/" method="GET">
-						<input name="pg" type="hidden" value="1" id="input_pg" />
-						<input name="nn" type="hidden" value="{{ nn }}" id="input_nn" />
-						<input name="sk" type="hidden" value="{{ sk }}" id="input_sk" />
-						<input name="so" type="hidden" value="{{ so }}" id="input_so" />
-						<input name="export" type="hidden" value="0" id="input_export" />
-
-						<table class="header_table">
-							<tr>
-								<td><b>Search:</b></td>
-								<td><input name="search" id="input_search" size="50" type="text" value="{{ search_str }}"></td>
-								<td>&nbsp; &nbsp;</td>
-								<td><b>From:</b></td>
-								<td><input name="time_min" id="input_time_min" size="16" type="text" value="{{ time_min }}"></td>
-								<td>&nbsp; &nbsp;</td>
-								<td><input type="button" onclick="javascript:submit_search_form();" value="Go"></td>
-							</tr>
-								<td><b>Filter:</b></td>
-								<td><input name="filter" id="input_filter" size="50" type="text" value="{{ filter_str }}"></td>
-								<td></td>
-								<td><b>To:</b></td>
-								<td><input name="time_max" id="input_time_max" size="16" type="text" value="{{ time_max }}"></td>
-								<td></td>
-								<td></td>
-							<tr>
-						</table>
-						</form> <!-- list form -->
-
-					</td>
-					<td align="right" style="width: 20%">
-						<a href="/new">new note</a> |
-						<a href="/reindex">reindex</a> |
-						<a href="/config">config</a> |
-						<a href="http://redlog.net/localnotes/" taget="_new">about</a>
-						<br /><br />
-						<form name="project_form" id="project_form" action="/project" method="GET">
-						Project:
-							<select name="project_name" id="project_name">
-							{% for project_name in project_list %}
-								<option value="{{ project_name }}">{{ project_name }}</option>
-							{% endfor %}
-							</select>
-							<input type="submit" value="Go">
-						</form>
-							<script language="javascript">
-						  		document.getElementById("project_name").value = "{{ active_project }}";
-							</script>
-
-					</td>
-				</tr>
-			</table>
-		</div><!-- end of header bar -->
-
-		<div><!-- main div -->
-
-			{% if context == 'list' or context == 'tagline' %}
-			<div style="display: flex;"><!-- for list / taglines -->
-
-			<!-- tags div -->
-			<div style="flex-grow: 0; background-color: {{ sidebar_color }}; padding: 12px;" name="tags_div" id="tags_div">
-			<b>All Tags</b>
-				<br />
-				<span style="font-size: small">
-					<a href="javascript:table_sort('all_tag_table', 'all_tag_tbody', 'name_order');">abc</a>
-					|
-					<a href="javascript:table_sort('all_tag_table', 'all_tag_tbody', 'count_order');">123</a>
-					|
-					<a href="javascript:show_tag_filter_span();">filter</a>
-					<span id="tag_filter_span" style="display:none"><br><input type="text" size="10" id="tag_filter_text" name="tag_filter_text" /></span>
-					<hr />
-				</span>
-				<div id="scrollable_tags_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
-				<table id="all_tag_table" class="counter_table">
-					<tbody id="all_tag_tbody">
-				{% for tag_quot, tag, ct in all_tags %}
-					<tr onmouseover="show_tl('{{ tag_quot }}');" onmouseout="hide_tl('{{ tag_quot }}');"><td><a href="/?filter={{ tag_quot }}">{{ tag }}</a><span style="visibility:hidden" id="tag_tl_span_{{ tag_quot }}"> &nbsp; <a href="/tagline/{{ tag_quot }}">TL</a></span></td><td>{{ ct }}</td></tr>
-				{% endfor %}
-					</tbody>
-				</table>
-				<input type="hidden" id="all_tag_table_name_order" value="asc">
-				<input type="hidden" id="all_tag_table_count_order" value="desc">
-				</div><!-- scrollable tag  div -->
-			</div>
-
-			<!-- people div -->
-			<div style="flex-grow: 0; background-color: {{ sidebar_color }}; padding: 12px;" name="people_div" id="people_div">
-			<b>All People</b>
-				<br />
-				<span style="font-size: small">
-					<a href="javascript:table_sort('all_people_table', 'all_people_tbody', 'name_order');">abc</a>
-					|
-					<a href="javascript:table_sort('all_people_table', 'all_people_tbody', 'count_order');">123</a>
-					|
-					<a href="javascript:show_people_filter_span();">filter</a>
-					<span id="people_filter_span" style="display:none"><br><input type="text" size="10" id="people_filter_text" name="people_filter_text" /></span>
-					<hr />
-				</span>
-				<div id="scrollable_people_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
-				<table id="all_people_table" class="counter_table">
-						<tbody id="all_people_tbody">
-				{% for p_quot, p, ct in all_people %}
-					<tr><td><a href="/?filter={{ p_quot }}">{{ p }}</a></td><td>{{ ct }}</td></tr>
-				{% endfor %}
-						</tbody>
-				</table>
-				<input type="hidden" id="all_people_table_name_order" value="asc">
-				<input type="hidden" id="all_people_table_count_order" value="desc">
-				</div><!-- scrollable people div -->
-			</div>
-
-			{% endif %} <!-- end of context is list or tagline -->
-
-			{% if context == 'list' %}
-
-			<!-- content div -->
-			<div style="flex-grow: 1; padding: 12px;" name="list_div" id="list_div">
-
-				<!-- navigation table -->
-				<table  class="header_table"  width="100%">
-					<tr>
-						<td colspan="3">
-        				<div class="focal" style="text-align: center; font-size: small; text-decoration: italic">
-							{% if total_notes == 0 %}
-								(no notes)
-							{% else %}
-								Showing notes {{ min_note + 1 }}-{{ max_note + 1 }} of {{ total_notes }}
-							{% endif %}
-						</div>
-						{% if filter_str|length > 0 %}
-        				<div class="alert" style="text-align: center; font-size: small; text-decoration: italic">
-							Filter: {{ filter_str }}
-						</div>
-						{% endif %} {# filterstr #}
-
-						{% if search_str|length > 0 %}
-        				<div class="alert" style="text-align: center; font-size: small; text-decoration: italic">
-							Search: {{ search_str }}
-						</div>
-						{% endif %} {# search str #}
-						<div class="focal" style="text-align: center; font-size: small; text-decoration: italic">
-							<a href="#" onclick="javascript:export_notes();">export this result set</a>
-						</div>
-						</td>
-
-					</tr>
-					<tr>
-						<td align="left">
-							{% if pg > 1 %}
-							<a href="javascript:go_to_page({{ pg - 1 }});">&lt; Prev</a>
-							{% else %}
-							&lt; Prev
-							{% endif %}
-						</td>
-						<td>
-							<p style="text-align: center;">
-							Pages:
-							{% for n in range(1, n_pages + 1) %}
-								{% if n == pg %}
-								{{ n }}
-								{% else %}
-								<a href="javascript:go_to_page({{ n }});">{{ n }}</a>
-								{% endif %}
-							{% endfor %}
-							</p>
-						</td>
-						<td align="right">
-							{% if pg < n_pages %}
-							<a href="javascript:go_to_page({{ pg + 1 }});">Next &gt;</a>
-							{% else %}
-							Next &gt;
-							{% endif %}
-						</td>
-					</tr>
-					<tr>
-						<td colspan="3" style="align:center">
-							<div style="text-align: center">
-							<a href="javascript:expand_messages();">expand</a> | <a href="javascript:collapse_messages();">collapse</a>
-							&nbsp; &nbsp; &nbsp; &nbsp;
-							<a href="javascript:display_compact();">compact</a> | <a href="javascript:display_comfortable();">comfortable</a>
-							&nbsp; &nbsp; &nbsp; &nbsp;
-							Sort by:
-							<select name="sk" id="dropdown_sk">
-								<option value="timestamp">Timestamp</option>
-								<option value="last_edit">Last Edit</option>
-								{% if search_str|length > 0 %}
-								<option value="relevance">Relevance</option>
-								{% endif %}
-							</select>
-							<select name="so" id="dropdown_so">
-								<option value="asc">Asc</option>
-								<option value="desc">Desc</option>
-							</select>
-							<input type="button" onclick="javascript:re_sort_list();" value="Go">
-							<script language="javascript">
-						  		document.getElementById("dropdown_so").value = "{{ so }}";
-						  		document.getElementById("dropdown_sk").value = "{{ sk }}";
-							</script>
-							</div>
-						</td>
-					</tr>
-				</table><!-- navigation -->
-				<hr />
-
-				<div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
-
-				<!-- note text -->
-				{% for note in notes_list %}
-				<div>
-					<a style="color: {{ focal_color }}" href="/note/{{ note.timestamp }}">{{ note.title }}</a></b>
-					<span class="comfortable"><br /></span>
-					<span style="font-size: smaller">
-						<span class="compact">&nbsp; | &nbsp;</span>
-						{{ note.dttm_str }} &nbsp; | &nbsp;
-						{% if sk == "last_edit" %}
-						last edit: {{ note.last_edit_str }}  &nbsp; | &nbsp;
-						{% endif %}
-						{% if search_str|length > 0 %}
-						relevance: {{ "%.4f"|format(note.score|float) }}  &nbsp; | &nbsp;
-						{% endif %}
-						{% for tag_quot, tag in note.tag_list %}
-							<a href="/?filter={{ tag_quot }}">{{ tag }}</a> &nbsp; | &nbsp;
-						{% endfor %}
-						{% for p_quot, p in note.people_list %}
-							<a href="/?filter={{ p_quot }}">{{ p }}</a> &nbsp; | &nbsp;
-						{% endfor %}
-						<a href="/edit/{{ note.timestamp }}">edit</a> &nbsp; | &nbsp; <a href="/clone/{{ note.timestamp }}">clone</a>
-					</span>
-				</div>
-				<div class="msg_body">{{ note.note_body_md|safe }}<hr /></div>
-				<span class="comfortable"><p></p></span>
-				{% endfor %}
-
-				</div><!-- end of scrollable content div -->
-
-			</div><!-- end of list div -->
-
-			{% endif %}  <!-- context = list -->
+    {% include "header.html" %}
 
 
-			{% if context == 'tagline' %}
-			<div style="flex-grow: 1; padding: 12px;" name="tagline_div" id="tagline_div">
-				<div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
+    <!--
+    -- include the correct html file based on the context
+    -->
 
-					<p><b>Taglines for tag <a style="color: {{ link_color }}" href="/?filter={{ tag_quot }}">{{ tag }}</a></b></p>
-					{% for note in tagline_list %}
-					<p>
-						<b><a style="color: {{ focal_color }}" href="/note/{{ note.timestamp }}">{{ note.title }}</a></b>
+    {% if context == 'list' or context == 'tagline' %}
+        {% include 'lists.html' %}
+    {% endif %}
 
-						<br />
-						[ <a href="/edit/{{ note.timestamp }}">edit</a> ]
+	{% if context == 'read' %}
+		{% include 'read_note.html' %}
+	{% endif %}
 
-						<br />
-						<span style="font-size: smaller">{{ note.dttm_str }}</span>
-						<ul>
-						{% for tagline in note.taglines %}
-							<li>{{ tagline|safe }}</li>
-						{% endfor %}
-						</ul>
-					</p>
-					{% endfor %}
-				</div><!-- scrollable_content_div -->
-			</div><!-- tagline_div -->
-			{% endif %}  <!-- context = tagline -->
+	{% if context == 'edit' %}
+		{% include 'edit_note.html' %}
+	{% endif %}
 
-			{% if context == 'list' or context == 'tagline' %}
-				</div><!-- for list / taglines -->
-			{% endif %}
+	{% if context == 'error' %}
+		{% include 'error.html' %}
+	{% endif %}
 
-			{% if context == 'read' %}
+	{% if context == 'config' %}
+		{% include 'config.html' %}
+	{% endif %}
 
-			<div style="padding: 12px;" name="read_info_div" id="read_info_div">
-
-			Tags:
-			{% for tag_quot, tag in tag_list %}
-			<a href="/?filter={{ tag_quot }}">{{ tag }}</a>
-			{% endfor %}
-			<br />
-            Attendees:
-			{% for p_quot, p in people_list %}
-			<a href="/?filter={{ p_quot }}">{{ p }}</a>
-			{% endfor %}
-			<br />
-			Created: {{ timestamp_str }}<br />
-			Modified: {{ last_edit_dttm }}</i> <br />
-			Filename: {{ filename }}<br />
-
-			<a href="/edit/{{ id }}">edit</a> &nbsp;
-			| &nbsp; <a href="/clone/{{ id }}">clone</a> &nbsp;
-			| &nbsp; <a class="alert" href="javascript:expand_delete();">delete</a>
-			<form id="delete_form" style="display: none" name="delete_form" action="/delete" method="POST",
-				enctype="application/x-www-form-urlencoded">
-			<br /><br />
-			Type "delete" to confirm:
-			<input type="hidden" name="id" id="id" value="{{ id }}" />
-			<input type="text" name="delete_text" id="delete_text" />
-			<input type="submit" value="Delete" />
-			</form>
-
-			</div> <!-- read_info_div -->
-
-			<br style="clear: both;" />
-			<hr />
-
-			<div id="flex_div" style="display: flex">
-
-			<div style="flex-grow: 1; padding: 12px" name="read_text_div" id="read_text_div">
-			{{ note_body_md|safe }}
-			</div>
-
-			<div style="flex-grow: 0; padding: 12px;" name="show_images_div" id="show_images_div">
-
-				{% if img_refs|length > 0 %}
-
-					<p><b>Images ({{ img_refs|length }}):</b></p>
-
-					{% for img_ref in img_refs %}
-					<p>
-						<a href="/image/{{ id }}/{{ img_ref }}" target="_new"><img class="img_footer" src="/image/{{ id }}/{{ img_ref }}"></a>
-					</p>
-					{% endfor %}
-
-				{% endif %}
-
-			</div>
-
-				</div><!-- flex_div -->
-			<hr />
-
-			{% endif %} <!-- context = read -->
-
-			{% if context == 'edit' %}
-
-			<div id="edit_flex" style="display:flex">
-
-				<div id="people_autocomplete_div" style="display:none">
-					<div style="background-color:#dddddd;padding:8px">
-					<b>Name Search: </b>
-					<input type="text" id="people_autocomplete_text_field" name="people_autocomplete_text_field">
-					</div>
-                </div>
-
-				<div style="flex-grow: 1; padding: 12px;" name="edit_div" id="edit_div">
-
-					<p style="text-align: center;">
-					Font:
-					<a href="javascript:textarea_mono();">mono</a> |
-					<a href="javascript:textarea_sans();">sans</a> |
-					<a href="javascript:textarea_serif();">serif</a>
-					&nbsp; &nbsp; &nbsp;
-					Image frame: <a href="javascript:image_edit_frame_show();">show</a> | <a href="javascript:image_edit_frame_hide();">hide</a>
-					</p>
-
-					<form id="save_form" action="/save" method="POST" enctype="application/x-www-form-urlencoded">
-					<input type="hidden" id="id" name="id" value="{{ id }}" />
-					<input type="hidden" id="starting_hash" name="starting_hash" value="{{ starting_hash }}" />
-					<textarea class="txt_sans" style="width: 100%; height: 80vh;" form="save_form" id="big_text" name="big_text">{{ note_body }}</textarea>
-					<br />
-					<input type="submit" value="Save" />
-					</form>
-					<button onclick="window.location.href='/cancel/{{ id }}';">Cancel</button>
-				</div>
-
-				<div style="flex-grow: 0; padding: 12px; display:none" name="ul_image_div" id="ul_image_div">
-					<iframe style="height: 80vh" src="/image_edit_list/{{ id }}" title=""></iframe>
-				</div>
-
-			</div><!-- edit flex -->
-			{% endif %} <!-- context = edit -->
-
-
-			{% if context == 'error' %}
-			<p>
-			<b>Error</b>
-			</p>
-			<p>
-				<span style="font-color: {{ alert_color }}">{{ message|safe }}</span>
-			</p>
-			{% endif %}  <!-- context = error -->
-
-
-			{% if context == 'config' %}
-			<p><b>Configuration</b></p>
-			<p>Your config file is located at: <i>{{ config_file_path }}</i></p>
-			<p>To adjust your configuration, edit that file, then reload the server.</p>
-			<p>Your configuration:</p>
-			<pre>{{ config_txt }}</pre>
-
-			<p><b>Project Configuration</b></p>
-			<p>The configuration for this project is located within the index file, which is located at: <i>{{ index_path }}</i></p>
-			<p>To adjust your project configuration, edit that file, then reload the project.</p>
-			<p>Your configuration:</p>
-			<pre>{{ project_config_txt }}</pre>
-
-			{% endif %}  <!-- config -->
-
-
-			{% if context == 'export' %}
-			<p><b>Export</b></p>
-			<p>{{ num_notes }} notes written to <i>{{ export_file_path }}</i></p>
-			{% endif %}  <!-- export -->
-
-		</div><!-- main div -->
+	{% if context == 'export' %}
+		{% include 'export.html' %}
+	{% endif %}
 
 	</body>
 </html>

@@ -79,6 +79,17 @@ function image_edit_frame_hide() {
 }
 
 
+function info_pane_show() {
+    var fr = document.getElementById("ul_info_div");
+    fr.style.display = "";
+}
+
+function info_pane_hide() {
+    var fr = document.getElementById("ul_info_div");
+    fr.style.display = "none";
+}
+
+
 function show_tag_filter_span()
 {
     var d = document.getElementById("tag_filter_span");
@@ -275,11 +286,6 @@ function page_load(context)
         document.getElementById("input_search").focus();
     }
 
-    if (context == 'list')
-    {
-        draw_date_histogram();
-    }
-
     if (context == "edit")
     {
         document.getElementById('big_text').addEventListener('keydown', text_area_listener);
@@ -357,11 +363,11 @@ function table_filter(table_id, substring)
             var result = value.indexOf(ss);
             if (result > 0)
             {
-                row.style.display = '';
+                row.style.display = "";
             }
             else
             {
-                row.style.display = 'none';
+                row.style.display = "none";
             }
         }
     );

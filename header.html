@@ -1,0 +1,112 @@
+    <div class="px-3 py-2 text-bg-secondary">
+        <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start">
+          <a href="/" class="d-flex align-items-center my-2 my-lg-0 me-lg-auto text-white text-decoration-none">
+            <img src="/static/localnotes_icon.png"/>
+              &nbsp; Localnotes
+          </a>
+
+          <ul class="nav col-12 col-lg-auto my-2 justify-content-center my-md-0 text-small">
+            <li>
+              <a href="/new" class="nav-link text-white">
+                New note
+              </a>
+            </li>
+            <li>
+              <a href="/reindex" class="nav-link text-white">
+                Reindex
+              </a>
+            </li>
+            <li>
+              <a href="/config" class="nav-link text-white">
+                Config
+              </a>
+            </li>
+            <li>
+              <a href="http://redlog.net/localnotes/" taget="_new" class="nav-link text-white">
+                About
+              </a>
+          </ul>
+        </div>
+    </div><!-- end of row -->
+
+    <!-- row 2 -->
+    <div class="px-1 py-2 text-bg-light border-bottom">
+        <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-lg-start">
+
+          <!-- search form -->
+          <div class="d-flex align-items-center my-0 my-lg-0 me-lg-auto text-decoration-none">
+			<form name="list_form" id="list_form" action="/" method="GET">
+
+                <input name="pg" type="hidden" value="1" id="input_pg" />
+				<input name="nn" type="hidden" value="{{ nn }}" id="input_nn" />
+				<input name="sk" type="hidden" value="{{ sk }}" id="input_sk" />
+				<input name="so" type="hidden" value="{{ so }}" id="input_so" />
+				<input name="export" type="hidden" value="0" id="input_export" />
+
+                <div class="container-fluid">
+
+                <div class="row">
+                    <div class="col-1">
+				  <label class="pr-2">Search &nbsp; &nbsp; </label>
+                        </div>
+                    <div class="col-6">
+				  <input type="text" class="form-control form-control-sm" name="search" id="input_search" value="{{ search_str }}">
+                        </div>
+                    <div class="col-1">
+				  <label class="pr-2">From &nbsp; </label>
+                        </div>
+                    <div class="col-3">
+				  <input type="text" class="form-control form-control-sm" name="time_min" id="input_time_min" value="{{ time_min }}">
+                        </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-1">
+                  <label class="pr-2">Filter &nbsp; </label>
+                        </div>
+                    <div class="col-6">
+				  <input type="text" class="form-control form-control-sm" name="filter" id="input_filter" value="{{ filter_str }}">
+                        </div>
+                    <div class="col-1">
+				  <label class="pr-2">To &nbsp; </label>
+                        </div>
+                    <div class="col-3">
+				  <input type="text" class="form-control form-control-sm" name="time_max" id="input_time_max" value="{{ time_max }}">
+                        </div>
+                    <div class="col-1">
+				  <button type="button" class="btn btn-primary btn-sm" onclick="javascript:submit_search_form();">Go</button>
+                        </div>
+                </div>
+
+                </div><!-- conainter fluid -->
+
+			</form> <!-- list form -->
+            </div>
+
+
+          <!-- project form -->
+          <div class="nav col-12 col-lg-auto justify-content-center my-md-0 text-small">
+            <form class="form-inline" name="project_form" id="project_form" action="/project" method="GET">
+                <div class="input-group">
+                    <div class="col-auto">
+                        <label>Project &nbsp; </label>
+                    </div>
+                    <div class="col-auto">
+                        <select class="form-control form-control-sm" name="project_name" id="project_name">
+                            {% for project_name in project_list %}
+                                <option value="{{ project_name }}">{{ project_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-auto">
+                        <input class="btn btn-primary btn-sm" type="submit" value="Go">
+                    </div>
+                </div><!-- inpout group -->
+                <script language="javascript">
+                    document.getElementById("project_name").value = "{{ active_project }}";
+                </script>
+            </form>
+            </div><!-- project form -->
+
+        </div> <!-- inner div -->
+    </div><!-- end of row 2 -->
