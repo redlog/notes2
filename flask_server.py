@@ -4,6 +4,7 @@ import math
 import signal
 import time
 import pprint
+import json
 
 from flask import Flask, render_template, redirect, Response, request, send_file
 import waitress
@@ -197,26 +198,12 @@ def list_notes() -> tuple[str, int]:
 
     notes_list = []
     for n in note_subset:
-        _, note_body = Index.read_note_file(n.timestamp, cfg, parse=False)
-
-        # could just do rendering markdown, which is simpler i.e. markdown.markdown(note_body)
-        note_body = apply_images(note_body, n.timestamp)
-        note_body_md = apply_markdown_and_links(note_body)
-
-        # XXX: highlighting search results is imperfect.  It is looking for the tokens in the search query, so we
-        # can't highlight the actual trigrams that we're indexing on when trigram search, and since it uses
-        # the tokens as substrings, it'll find them even when they are _not_ in the index, in word-based search
-        if len(search):
-            for s in search.split():
-                note_body_md = note_body_md.replace(s, "<span style=\"background-color: #ffff00\">{0}</span>".format(s))
-
         d = {
             'tag_list': [(quote(t), t) for t in n.tags],
             'people_list': [(quote(p), p) for p in n.people],
             'timestamp': n.timestamp,
             'dttm_str': str(datetime.datetime.fromtimestamp(n.timestamp))[:19],
             'last_edit_str': str(datetime.datetime.fromtimestamp(n.last_edit_time))[:19],
-            'note_body_md': note_body_md,
             'title': n.title,
             'score': n.score
         }
@@ -228,7 +215,7 @@ def list_notes() -> tuple[str, int]:
     if len(filter_list):
         page_title += "\"" + ', '.join(filter_list) + "\""
 
-    d = {'context': 'list', 'compact': cfg.get_list_compact(),  # compact flag is currently unused
+    d = {'context': 'list',
          'page_title': page_title,
          'all_tags': all_tags, 'all_people': all_people,
          'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
@@ -243,6 +230,18 @@ def list_notes() -> tuple[str, int]:
          }
 
     return render_template('notes.html', **d), 200
+
+
+@app.route('/api/rendered_note_body')
+@check_index_integrity
+def get_rendered_note_body() -> Response:
+    note_id: int = request.args.get('id', 0, int)
+    note_obj, note_body = Index.read_note_file(note_id, cfg, parse=False)
+
+    # could just do rendering markdown, which is simpler i.e. markdown.markdown(note_body)
+    note_body = apply_images(note_body, note_id)
+    note_body_md = apply_markdown_and_links(note_body)
+    return Response(json.dumps({'body': note_body_md}), mimetype='text/json')
 
 
 @app.route('/image/<int:note_id>/<int:img_num>')
@@ -457,6 +456,53 @@ def cancel_edit(note_id: int) -> Union[Response, tuple[str, int]]:
     return redirect("/note/{0}".format(note_id), code=302)
 
 
+@app.route('/api/autosave')
+@check_index_integrity
+def autosave() -> Response:
+    """
+    This is basically a copy of the save function
+    """
+
+    id_: int = request.args.get('id', 0, int)
+    text_: str = request.args.get('big_text', "", str)
+    starting_hash: str = request.args.get('starting_hash', "", str)
+
+    r = Index.unlock_note(id_, cfg)
+    if not r:
+        err_msg = "Error: note {0} was not previously locked for edit. Lock file: {1}".format(id_, Index.get_lock_file_name(id_, cfg))
+        response = {'starting_hash': '', 'error_message': err_msg}
+        return Response(json.dumps(response), mimetype='text/json')
+
+    current_note, current_note_body = Index.read_note_file(id_, cfg, parse=False)
+    current_hash = hashlib.md5(current_note_body.encode("utf-8")).hexdigest()
+
+    if starting_hash != current_hash:
+        err_msg = "Error: note {0} has changed unexpectedly!\n\nStarting hash: {1} Current hash: {2}\n\nFile not saved, since doing so would overwrite more recent changes.  To save your changes, copy the raw markdown below into another file and try again."
+        response = {'starting_hash': '', 'error_message': err_msg}
+        return Response(json.dumps(response), mimetype='text/json')
+
+    # remove the old one from the index
+    idx.remove_note_from_index(current_note.timestamp, save=False)
+
+    # overwrite, then get a new note object
+    Index.save_note_file(id_, text_, cfg)
+    new_note_obj, new_body = Index.read_note_file(id_, cfg)
+
+    # update the index for the revised note
+    idx.add_note_to_index(new_note_obj, new_body)
+
+    # re-lock the note
+    r = Index.lock_note(id_, cfg)
+    if not r:
+        err_msg = "Error: cannot re-lock the note!"
+        response = {'starting_hash': '', 'error_message': err_msg}
+        return Response(json.dumps(response), mimetype='text/json')
+
+    new_hash = hashlib.md5(new_body.encode('utf-8')).hexdigest()
+    response = {'starting_hash': new_hash, 'error_message': ""}
+    return Response(json.dumps(response), mimetype='text/json')
+
+
 @app.route('/save', methods=['POST'])
 @check_index_integrity
 def save_note() -> Union[Response, tuple[str, int]]:
@@ -511,8 +557,11 @@ def delete_note() -> Response:
 
     if delete_text == 'delete':
         # do it
-        idx.remove_note_from_index(id_)
-        Index.delete_note_file(id_, cfg)
+        try:
+            idx.remove_note_from_index(id_)
+            Index.delete_note_file(id_, cfg)
+        except FileNotFoundError:
+            return "<html><body>File not found: {0}</body></html>".format(id_), 404
         return redirect("/", code=302)
     else:
         # go back
@@ -536,7 +585,8 @@ def clone_note(note_id: int) -> Union[Response, tuple[str, int]]:
     except FileNotFoundError:
         return "<html><body>File not found: {0}</body></html>".format(note_id), 404
 
-    unix_time = idx.new_file(tag_list=note.tags, people_list=note.people, title=note.title)
+    body = "Cloned from note:{0}".format(note_id)
+    unix_time = idx.new_file(tag_list=note.tags, people_list=note.people, title=note.title, body=body)
     url = "/edit/{0}".format(unix_time)
     return redirect(url, code=302)
 
@@ -552,7 +602,7 @@ def export(list_of_notes: list[Note], search_str: str, filter_str: str) -> tuple
 
     dttm = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
     filename = 'notes_export_' + dttm + '.html'
-    export_file_path = os.path.join(cfg.get_base_path(), cfg.get_notes_dir(), filename)
+    export_file_path = os.path.join(cfg.get_notes_dir(), filename)
     num_notes = len(list_of_notes)
 
     big_body = """<html>

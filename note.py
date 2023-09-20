@@ -6,17 +6,18 @@ from config import Config
 
 class Note(object):
 
-    def __init__(self, tags: list[str], people: list[str], title: str, timestamp: int, last_edit_time=None):
+    def __init__(self, tags: list[str], people: list[str], title: str, timestamp: int, last_edit_time=None, token_count=0):
         self.tags = tags
         self.people = people
         self.title = title
         self.timestamp = timestamp
         self.score = 0.0
         self.last_edit_time = last_edit_time
+        self.token_count = token_count
 
     def to_json(self) -> dict:
         return {'tags': self.tags, 'people': self.people, 'title': self.title, 'timestamp': self.timestamp,
-                'last_edit_time': self.last_edit_time}
+                'last_edit_time': self.last_edit_time, 'token_count': self.token_count}
 
     def get_file_name(self, cfg: Config) -> str:
         dttm = datetime.datetime.fromtimestamp(self.timestamp)

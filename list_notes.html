@@ -1,3 +1,7 @@
+<div class="container-fluid">
+
+	<div class="row">
+		<div class="col">
 				<!-- navigation table -->
 				<table  class="header_table"  width="100%">
 					<tr>
@@ -57,9 +61,7 @@
 					<tr>
 						<td colspan="3" style="align:center">
 							<div style="text-align: center">
-							<a href="javascript:expand_messages();">expand</a> | <a href="javascript:collapse_messages();">collapse</a>
-							&nbsp; &nbsp; &nbsp; &nbsp;
-							<a href="javascript:display_compact();">compact</a> | <a href="javascript:display_comfortable();">comfortable</a>
+							<a href="javascript:expand_messages();">expand all</a> | <a href="javascript:collapse_messages();">collapse all</a>
 							&nbsp; &nbsp; &nbsp; &nbsp;
 							Sort by:
 							<select name="sk" id="dropdown_sk">
@@ -73,7 +75,7 @@
 								<option value="asc">Asc</option>
 								<option value="desc">Desc</option>
 							</select>
-							<input type="button" onclick="javascript:re_sort_list();" value="Go">
+							<input type="button" class="btn btn-primary btn-sm" onclick="javascript:re_sort_list();" value="Go">
 							<script language="javascript">
 						  		document.getElementById("dropdown_so").value = "{{ so }}";
 						  		document.getElementById("dropdown_sk").value = "{{ sk }}";
@@ -82,17 +84,19 @@
 						</td>
 					</tr>
 				</table><!-- navigation -->
-				<hr />
+			</div><!-- col -->
+		</div><!-- row -->
 
-				<div id="scrollable_content_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
+		<hr />
 
+		<div class="row">
+			<div class="col">
 				<!-- note text -->
 				{% for note in notes_list %}
 				<div>
-					<a style="color: {{ focal_color }}" href="/note/{{ note.timestamp }}">{{ note.title }}</a></b>
-					<span class="comfortable"><br /></span>
+					<a href="/note/{{ note.timestamp }}">{{ note.title }}</a></b>
 					<span style="font-size: smaller">
-						<span class="compact">&nbsp; | &nbsp;</span>
+						&nbsp; | &nbsp;
 						{{ note.dttm_str }} &nbsp; | &nbsp;
 						{% if sk == "last_edit" %}
 						last edit: {{ note.last_edit_str }}  &nbsp; | &nbsp;
@@ -106,12 +110,11 @@
 						{% for p_quot, p in note.people_list %}
 							<a href="/?filter={{ p_quot }}">{{ p }}</a> &nbsp; | &nbsp;
 						{% endfor %}
-						<a href="/edit/{{ note.timestamp }}">edit</a> &nbsp; | &nbsp; <a href="/clone/{{ note.timestamp }}">clone</a>
+						<a href="/edit/{{ note.timestamp }}">edit</a> &nbsp; | &nbsp; <a href="/clone/{{ note.timestamp }}">clone</a> &nbsp; | &nbsp; <a href="javascript:expand_note('msg_body_{{ note.timestamp }}');">expand</a>
 					</span>
 				</div>
-				<span class="msg_body">{{ note.note_body_md|safe }}<hr /></span>
-				<span class="comfortable"><p></p></span>
+				<span class="msg_body" id="msg_body_{{ note.timestamp }}"></span>
 				{% endfor %}
-
-				</div><!-- end of scrollable content div -->
-
+			</div><!-- col -->
+		</div><!-- row -->
+</div><!-- container -->

@@ -1,25 +1,21 @@
 <html>
 <head>
+	<link rel="stylesheet" href="/static/bootstrap.min.css">
 	<link rel="stylesheet" href="{{ url_for('static', filename = 'notes.css') }}" />
-	<style>
-		a { color: {{ link_color }} }
-		.alert { color: {{ alert_color }} }
-		.focal { color: {{ focal_color }} }
-	</style>
 </head>
 
-<body>
+<body class="text-bg-light">
 	<form id="image_form" action="/upload" method="POST" enctype="multipart/form-data">
-		<input type="hidden" id="id" name="id" value="{{ id }}" />
-		<input type="file" id="img_file" name="img_file">
+		<input class="form-control form-control-sm" type="hidden" id="id" name="id" value="{{ id }}" />
+		<input class="form-control form-control-sm" type="file" id="img_file" name="img_file">
 		<br />
-		<input type="submit" value="Upload" />
+		<input class="btn btn-primary" type="submit" value="Upload" />
 	</form>
 	{% if img_refs|length > 0 %}
 		{% for img_ref in img_refs %}
     		<hr />
 			<p>
-				<b>[<a class="alert" href="/image_del/{{ id }}/{{ img_ref }}">X</a>] Image {{ img_ref }}</b><br />
+				<input class="btn btn-danger" onclick="window.location='/image_del/{{ id }}/{{ img_ref }}'" value="X" /> Image {{ img_ref }}<br />
 				<a href="/image/{{ id }}/{{ img_ref }}" target="_new"><img class="img_footer" src="/image/{{ id }}/{{ img_ref }}"></a>
 			</p>
 		{% endfor %}

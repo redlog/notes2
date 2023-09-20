@@ -11,7 +11,6 @@ class Config(object):
         self.DEFAULT_NN = 25
         self.HTTP_PORT = 80
         self.USAGE_STATS = 0
-        self.LIST_COMPACT = 0
         self.ACTIVE_PROJECT = None
         self.PROJECT_LIST = []
 
@@ -45,7 +44,6 @@ class Config(object):
         self.DEFAULT_NN = cfg.get('DEFAULT_NN', self.DEFAULT_NN)
         self.HTTP_PORT = cfg.get('HTTP_PORT', self.HTTP_PORT)
         self.USAGE_STATS = cfg.get('USAGE_STATS', self.USAGE_STATS)
-        self.LIST_COMPACT = cfg.get('LIST_COMPACT', self.LIST_COMPACT)
         self.ACTIVE_PROJECT = cfg.get('ACTIVE_PROJECT', None)
 
         self.PROJECT_LIST = []
@@ -89,7 +87,6 @@ class Config(object):
                 'DEFAULT_NN': self.DEFAULT_NN,
                 'HTTP_PORT': self.HTTP_PORT,
                 'USAGE_STATS': self.USAGE_STATS,
-                'LIST_COMPACT': self.LIST_COMPACT,
                 'ACTIVE_PROJECT': self.ACTIVE_PROJECT,
                 'PROJECT_LIST': self.PROJECT_LIST
             })
@@ -112,9 +109,6 @@ class Config(object):
 
     def get_http_port(self) -> int:
         return self.HTTP_PORT
-
-    def get_list_compact(self) -> int:
-        return self.LIST_COMPACT
 
     def get_active_project_name(self) -> str:
         return self.ACTIVE_PROJECT

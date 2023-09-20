@@ -69,7 +69,7 @@ class Index(object):
                    'inlinks': {}
                    }
 
-        self.notes = [Note(n['tags'], n['people'], n['title'], n['timestamp'], n['last_edit_time']) for n in obj['notes']]
+        self.notes = [Note(n['tags'], n['people'], n['title'], n['timestamp'], n['last_edit_time'], n['token_count']) for n in obj['notes']]
         self.people = Counter(dict(obj['people']))
         self.tags = Counter(dict(obj['tags']))
         self.tfidf_vocab = obj['tfidf_vocab']
@@ -161,6 +161,11 @@ class Index(object):
             for doc, score in self.tfidf_inv_idx[widx]:
                 doc_scores[doc] = doc_scores.get(doc, 0) + score
 
+        # normalize by the size of the doc
+        lengths = dict([(n.timestamp, n.token_count) for n in self.notes])
+        for doc in doc_scores.keys():
+            doc_scores[doc] /= lengths[doc]
+
         return doc_scores
 
     def body_to_words(self, txt: str) -> list[str]:
@@ -205,6 +210,8 @@ class Index(object):
                     words = self.body_to_words(note_text)
                     if self.project_config['index_trigrams'] == 1:
                         words += Index.words_to_trigrams(words)
+
+                    note.token_count = len(words)  # note: this is done in add_note_to_index but only if we are adding the note to the search index at that time
                     for w in set(words):
                         idx = word_indices.get(w, -1)
                         if idx == -1:
@@ -328,6 +335,7 @@ class Index(object):
             if self.project_config['index_trigrams'] == 1:
                 words += Index.words_to_trigrams(words)
 
+            note.token_count = len(words)
             ctr = Counter(words)
             for w in ctr:
 

@@ -10,7 +10,6 @@
 					<a href="javascript:show_tag_filter_span();">filter</a>
 					<span id="tag_filter_span" style="display:none"><br><input type="text" size="10" id="tag_filter_text" name="tag_filter_text" /></span>
 					<hr />
-				<div id="scrollable_tags_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
 				<table id="all_tag_table" class="counter_table">
 					<tbody id="all_tag_tbody">
 				{% for tag_quot, tag, ct in all_tags %}
@@ -20,7 +19,6 @@
 				</table>
 				<input type="hidden" id="all_tag_table_name_order" value="asc">
 				<input type="hidden" id="all_tag_table_count_order" value="desc">
-				</div><!-- scrollable tag  div -->
         </div>
 			<div class="col-auto bg-light" name="people_div" id="people_div">
 			<b>All People</b>
@@ -32,7 +30,6 @@
 					<a href="javascript:show_people_filter_span();">filter</a>
 					<span id="people_filter_span" style="display:none"><br><input type="text" size="10" id="people_filter_text" name="people_filter_text" /></span>
 					<hr />
-				<div id="scrollable_people_div" style="overflow-x:hidden; overflow-y:auto; height:300px">
 				<table id="all_people_table" class="counter_table">
 						<tbody id="all_people_tbody">
 				{% for p_quot, p, ct in all_people %}
@@ -42,7 +39,6 @@
 				</table>
 				<input type="hidden" id="all_people_table_name_order" value="asc">
 				<input type="hidden" id="all_people_table_count_order" value="desc">
-				</div><!-- scrollable people div -->
 			</div>
 
         <div class="col-xl" name="list_div" id="list_div">

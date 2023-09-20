@@ -1,6 +1,10 @@
-<p>
-<b>Error</b>
-</p>
-<p>
-    <span style="font-color: {{ alert_color }}">{{ message|safe }}</span>
-</p>
+<div class="container-fluid">
+    <div class="row">
+        <div class="col">
+            <h1>Error</h1>
+                <div class="alert alert-danger">
+                        {{ message|safe }}
+                </div>
+        </div>
+    </div>
+</div>
