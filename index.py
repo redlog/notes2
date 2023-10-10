@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 import time
 import datetime
 import json
+from json.decoder import JSONDecodeError
 from operator import itemgetter
 import hashlib
 import math
@@ -62,9 +63,9 @@ class Index(object):
                 b = fp.read()
                 obj = json.loads(b)
                 hash_ = hashlib.md5(b.encode("utf-8")).hexdigest()
-        except FileNotFoundError:
+        except (FileNotFoundError, JSONDecodeError) as e:
             # create an empty index
-            obj = {'project_config': {'index_trigrams': 1},
+            obj = {'project_config': {'index_trigrams': 0},
                    'notes': [], 'tags': [], 'people': [], 'tfidf_vocab': [], 'tfidf_dfs': [], 'tfidf_inv_idx': [],
                    'inlinks': {}
                    }

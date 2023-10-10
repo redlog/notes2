@@ -92,14 +92,27 @@ class Config(object):
             })
             fp.write(b)
 
-    def set_active_project(self, project_name) -> bool:
+    def create_project(self, project_name, new_path=None, fail_if_exists=True) -> (bool, str):
+        names = [pl['PROJECT_NAME'] for pl in self.PROJECT_LIST]
+        if project_name in names:
+            if fail_if_exists:
+                return False, "Project already exists: \"{0}\"".format(project_name)
+            else:
+                return True, ""
+        new_path = new_path or os.path.join(self.DEFAULT_BASE_PATH, project_name)
+        d = {'PROJECT_NAME': project_name, 'PROJECT_PATH': new_path}
+        self.PROJECT_LIST.append(d)
+        self.save_config_file()
+        return True, ""
+
+    def set_active_project(self, project_name) -> (bool, str):
         for pl in self.PROJECT_LIST:
             if project_name == pl['PROJECT_NAME']:
                 self.ACTIVE_PROJECT = pl['PROJECT_NAME']
                 self.active_notes_dir = pl['PROJECT_PATH']
                 self.save_config_file()
-                return True
-        return False  # not ok - we didn't find that project name in the list
+                return True, ""
+        return False, "Invalid or unknown project: \"{0}\"".format(project_name)  # not ok - we didn't find that project name in the list
 
     def get_num_notes_per_page(self) -> int:
         return self.DEFAULT_NN

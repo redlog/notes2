@@ -255,6 +255,9 @@ def apply_markdown_and_links(note_body: str) -> str:
 
     note_body_md = markdown.markdown(note_body, extensions=['tables', 'attr_list'])
 
+    note_body_md = note_body_md.replace("<td>", "<td style=\"padding: 2px 8px 2px 8px; border: 1px solid black; border-collapse: collapse\">")
+    note_body_md = note_body_md.replace("<th>", "<th style=\"padding: 2px 8px 2px 8px; border: 1px solid black; border-collapse: collapse\">")
+
     # check note body of references to other notes, to tags, and to people
     note_refs = re.findall("note:([0123456789]+)", note_body_md)
     for note_ref in note_refs:
@@ -456,6 +459,27 @@ def cancel_edit(note_id: int) -> Union[Response, tuple[str, int]]:
     return redirect("/note/{0}".format(note_id), code=302)
 
 
+@app.route('/api/title_search')
+@check_index_integrity
+def title_search() -> Response:
+    search_str: str = request.args.get('search_str', "", str)
+    response = {'contents': '', 'error_message': ""}
+    search_str = search_str.lower()
+    list_of_notes = []
+    for n in idx.get_notes():
+        if n.title.lower().find(search_str) > -1:
+            d = {
+                'tag_list': [(quote(t), t) for t in n.tags],
+                'people_list': [(quote(p), p) for p in n.people],
+                'timestamp': n.timestamp,
+                'dttm_str': str(datetime.datetime.fromtimestamp(n.timestamp))[:19],
+                'title': n.title,
+            }
+            list_of_notes.append(d)
+    response['contents'] = list_of_notes[:25]
+    return Response(json.dumps(response), mimetype='text/json')
+
+
 @app.route('/api/autosave')
 @check_index_integrity
 def autosave() -> Response:
@@ -499,7 +523,7 @@ def autosave() -> Response:
         return Response(json.dumps(response), mimetype='text/json')
 
     new_hash = hashlib.md5(new_body.encode('utf-8')).hexdigest()
-    response = {'starting_hash': new_hash, 'error_message': ""}
+    response = {'starting_hash': new_hash, 'title': new_note_obj.title, 'error_message': ""}
     return Response(json.dumps(response), mimetype='text/json')
 
 
@@ -654,14 +678,14 @@ def change_project() -> Union[Response, tuple[str, int]]:
     global cfg, idx
 
     project_name = request.args.get('project_name', None, str)
-    ok = cfg.set_active_project(project_name)
+    ok, err_msg = cfg.set_active_project(project_name)
 
     if not ok:
         d = {
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-            'page_title': "Error: Invalid or unknown project name: {0}".format(project_name),
-            'message': "Error: Invalid or unknown project name: {0}".format(project_name)
+            'page_title': "Error: {0}".format(err_msg),
+            'message': "Error: {0}".format(err_msg)
         }
         return render_template("notes.html", **d), 400
 

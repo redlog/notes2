@@ -1,8 +1,6 @@
 
 <div class="container-fluid">
-
     <div class="row">
-
         <div class="col-5">
             <h1>Configuration</h1>
             <p>Your config file is located at: <i>{{ config_file_path }}</i></p>
@@ -10,9 +8,7 @@
             <p>Your configuration:</p>
             <pre>{{ config_txt }}</pre>
         </div>
-
         <div class="col-1"></div>
-
         <div class="col-5">
             <h1>Project Configuration</h1>
             <p>The configuration for this project is located within the index file, which is located at: <i>{{ index_path }}</i></p>
@@ -20,7 +16,11 @@
             <p>Your configuration:</p>
             <pre>{{ project_config_txt }}</pre>
         </div>
-
     </div>
-
+    <div class="row">
+        <div class="col-12">
+            <p><hr /></p>
+            <p>You are running Localnotes build BUILD_VERSION built on BUILD_DATE.</p>
+        </div>
+    </div>
 </div>

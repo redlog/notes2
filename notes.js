@@ -11,6 +11,17 @@ function hide_delete() {
     d.style.display = "none";
 }
 
+function set_scrollable_div_height(div_id)
+{
+    var d = document.getElementById(div_id);
+    var vh = window.innerHeight;
+    var top = d.getBoundingClientRect().top;
+    var currHeight = d.style.height;
+    var newHeight = vh - top - 40;
+    d.style.height = "" + newHeight + "px";
+}
+
+
 function expand_messages() {
     var messages = document.querySelectorAll(".msg_body");
     for (var i = 0; i < messages.length; i++) {
@@ -174,6 +185,27 @@ function text_area_listener(e)
         e.preventDefault();
         show_people_autocomplete();
     }
+
+    if (e.key == '.')
+    {
+        if (e.ctrlKey)
+        {
+
+            document.getElementById('note_link_text_field').value = "";
+            $('#title_search_ul').empty();
+
+            var ul = document.getElementById('title_search_ul');
+            var li = document.createElement('li');
+            var t = document.createTextNode("matching note titles will show here");
+            var i = document.createElement('i');
+            i.append(t);
+            li.append(i);
+            ul.append(li);
+
+            document.getElementById('ul_note_link_div').style.display = "";
+            document.getElementById('note_link_text_field').focus();
+        }
+    }
 }
 
 function people_autocomplete_listener(e)
@@ -181,6 +213,18 @@ function people_autocomplete_listener(e)
     if (e.key == 'Enter')
     {
         // insert the name into the textarea
+        insert_people_autocomplete();
+    }
+
+    if (e.key == 'Escape')
+    {
+        // hide and go back
+        hide_people_autocomplete();
+    }
+}
+
+function insert_people_autocomplete()
+{
         var d = document.getElementById('big_text');
         var start = d.selectionStart;
         var end = d.selectionEnd;
@@ -191,15 +235,122 @@ function people_autocomplete_listener(e)
         }
         d.value = d.value.substring(0, start) + v + " " + d.value.substring(end);
         d.selectionStart = d.selectionEnd = start + v.length + 1;
-    }
 
-    if (e.key == 'Escape' || e.key == 'Enter')
-    {
-        // hide and go back
+        hide_people_autocomplete();
+}
+
+
+function hide_people_autocomplete()
+{
         document.getElementById("people_autocomplete_div").style.display = "none";
         document.getElementById('big_text').focus();
+}
+
+function note_link_listener(e)
+{
+    if (e.key == 'Escape')
+    {
+        // hide and go back
+        close_title_search();
+    }
+    if (e.key == 'Enter')
+    {
+        do_title_search();
     }
 }
+
+function close_title_search()
+{
+    document.getElementById('ul_note_link_div').style.display = "none";
+    document.getElementById('note_link_text_field').value = "";
+    document.getElementById('big_text').focus();
+}
+
+function do_title_search()
+{
+    document.getElementById("title_search_btn").disabled = true;
+    payload = { 'search_str': document.getElementById('note_link_text_field').value };
+    $('#title_search_ul').empty();
+
+    var ul = document.getElementById('title_search_ul');
+    var li = document.createElement('li');
+    var t = document.createTextNode("searching...");
+    var i = document.createElement('i');
+    i.append(t);
+    li.append(i);
+    ul.append(li);
+
+    $.get("/api/title_search", payload).done(do_title_search_callback);
+    document.getElementById('note_link_text_field').focus();
+}
+
+function do_title_search_callback(data)
+{
+        $('#title_search_ul').empty();
+        var ul = document.getElementById('title_search_ul');
+
+        if (data['error_message'].length > 0)
+        {
+            var li = document.createElement('li');
+            var t = document.createTextNode(data['error_message']);
+            li.append(t);
+            ul.append(li);
+        }
+        else
+        {
+            if (data['contents'].length == 0)
+            {
+                var li = document.createElement('li');
+                var t = document.createTextNode("No results found");
+                li.append(t);
+                ul.append(li);
+            }
+            else
+            {
+                for (var i = 0; i < data['contents'].length; i++)
+                {
+                    var li = document.createElement('li');
+                    var a = document.createElement('a');
+                    a.appendChild(document.createTextNode(data['contents'][i].title));
+                    a.setAttribute('id', 'note_link_' + data['contents'][i].timestamp.toString());
+                    a.setAttribute("href", "javascript:insert_note_link(" + data['contents'][i].timestamp.toString() + ");");
+                    li.append(a);
+                    li.append(document.createTextNode(" ["));
+                    a2 = document.createElement('a');
+                    a2.setAttribute('target', 'new_' + data['contents'][i].timestamp.toString());
+                    a2.setAttribute('href', "/note/" + data['contents'][i].timestamp.toString());
+                    a2.appendChild(document.createTextNode("open"));
+                    li.append(a2);
+                    li.append(document.createTextNode("]"));
+                    ul.append(li);
+                }
+                if (data['contents'].length == 25)
+                {
+                    var li = document.createElement('li');
+                    var t = document.createTextNode("Maximum of 25 results shown");
+                    li.append(t);
+                    ul.append(li);
+                }
+            }
+        }
+        document.getElementById("title_search_btn").disabled = false;
+}
+
+function insert_note_link(link_id)
+{
+    var d = document.getElementById('big_text');
+    var start = d.selectionStart;
+
+    var before = d.value.substring(0, start);
+    var after = d.value.substring(start);
+
+    var s = "note:" + link_id.toString();
+
+    d.value = before + " " + s + " " + after;
+    close_title_search();
+    d.focus();
+}
+
 
 function page_load(context)
 {
@@ -210,6 +361,20 @@ function page_load(context)
 
     if (context == 'list' || context == 'tagline')
     {
+
+        set_scrollable_div_height('tags_div');
+        set_scrollable_div_height('people_div');
+        set_scrollable_div_height('list_div');
+        window.addEventListener("resize",
+            function (e)
+            {
+                set_scrollable_div_height('tags_div');
+                set_scrollable_div_height('people_div');
+                set_scrollable_div_height('list_div');
+            }
+        );
+
+
         document.getElementById("people_filter_text").addEventListener("input",
             function()
             {
@@ -248,13 +413,41 @@ function page_load(context)
             }
         );
         document.getElementById("input_search").focus();
+
     }
 
     if (context == "edit")
     {
+        set_scrollable_div_height('ul_image_div');
+
+        var d = document.getElementById('big_text');
+        var vh = window.innerHeight;
+        var top = d.getBoundingClientRect().top;
+        var currHeight = d.style.height;
+        var newHeight = vh - top - 80;
+        d.style.height = "" + newHeight + "px";
+
+        window.addEventListener("resize",
+            function (e)
+            {
+                set_scrollable_div_height('ul_image_div');
+
+                // resize big_text
+                var d = document.getElementById('big_text');
+                var vh = window.innerHeight;
+                var top = d.getBoundingClientRect().top;
+                var currHeight = d.style.height;
+                var newHeight = vh - top - 80;
+                d.style.height = "" + newHeight + "px";
+            }
+        );
+
+
         document.getElementById('big_text').addEventListener('keydown', text_area_listener);
         document.getElementById('people_autocomplete_text_field').addEventListener('keyup',
             people_autocomplete_listener);
+
+        document.getElementById('note_link_text_field').addEventListener('keyup', note_link_listener);
 
         setTimeout(do_autosave, AUTOSAVE_SECONDS * 1000);
     }
@@ -290,6 +483,7 @@ function do_autosave_callback(data)
         else
         {
             document.getElementById('starting_hash').value = data['starting_hash'];
+            document.title = "Localnotes : Editing " + data['title'];
             document.getElementById("edit_form_save_btn").disabled = false;
             document.getElementById("edit_form_cancel_btn").disabled = false;
             setTimeout(do_autosave, AUTOSAVE_SECONDS * 1000);
