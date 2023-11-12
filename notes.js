@@ -1,6 +1,4 @@
 
-AUTOSAVE_SECONDS = 30;
-
 function expand_delete() {
     d = document.getElementById("delete_form_div");
     d.style.display = "";
@@ -19,21 +17,6 @@ function set_scrollable_div_height(div_id)
     var currHeight = d.style.height;
     var newHeight = vh - top - 40;
     d.style.height = "" + newHeight + "px";
-}
-
-
-function expand_messages() {
-    var messages = document.querySelectorAll(".msg_body");
-    for (var i = 0; i < messages.length; i++) {
-        expand_note(messages[i].id);
-    }
-}
-
-function collapse_messages() {
-    var messages = document.querySelectorAll(".msg_body");
-    for (var i = 0; i < messages.length; i++) {
-        messages[i].style.display = "none";
-    }
 }
 
 function textarea_sans() {
@@ -95,12 +78,26 @@ function show_people_filter_span()
 
 function show_tl(tag_quot)
 {
-    document.getElementById("tag_tl_span_" + tag_quot).style.visibility = "";
+    $('.tag_tl').each(
+        function()
+        {
+            if ($(this).data('tagquot') == tag_quot) {
+                $(this).attr("style", "visibility:visible");
+            }
+        }
+    );
 }
 
 function hide_tl(tag_quot)
 {
-    document.getElementById("tag_tl_span_" + tag_quot).style.visibility = "hidden";
+    $('.tag_tl').each(
+        function()
+        {
+            if ($(this).data('tagquot') == tag_quot) {
+                $(this).attr("style", "visibility:hidden");
+            }
+        }
+    );
 }
 
 // adapted from: https://stackoverflow.com/questions/6637341/use-tab-to-indent-in-textarea
@@ -312,8 +309,16 @@ function do_title_search_callback(data)
                     var li = document.createElement('li');
                     var a = document.createElement('a');
                     a.appendChild(document.createTextNode(data['contents'][i].title));
-                    a.setAttribute('id', 'note_link_' + data['contents'][i].timestamp.toString());
-                    a.setAttribute("href", "javascript:insert_note_link(" + data['contents'][i].timestamp.toString() + ");");
+                    a.setAttribute("href", "#");
+                    a.setAttribute("data-timestamp", data['contents'][i].timestamp.toString());
+
+                    $(a).click(
+                        function()
+                        {
+                            insert_note_link($(this).data("timestamp"));
+                        }
+                    );
+
                     li.append(a);
                     li.append(document.createTextNode(" ["));
                     a2 = document.createElement('a');
@@ -347,17 +352,24 @@ function insert_note_link(link_id)
     var s = "note:" + link_id.toString();
 
     d.value = before + " " + s + " " + after;
+    d.selectionStart = start + s.length + 2;
+    d.selectionEnd = d.selectionStart;
     close_title_search();
     d.focus();
 }
 
 
-function page_load(context)
+function page_load(context, active_project, sort_order, sort_key)
 {
+    document.getElementById("project_name").value = active_project;
+
     document.getElementById("input_search").addEventListener("keydown", form_submitter);
     document.getElementById("input_filter").addEventListener("keydown", form_submitter);
     document.getElementById("input_time_min").addEventListener("keydown", form_submitter);
     document.getElementById("input_time_max").addEventListener("keydown", form_submitter);
+
+    $( function() { $("#input_time_min").datepicker( { dateFormat: "yy-mm-dd" } ); } );
+    $( function() { $("#input_time_max").datepicker( { dateFormat: "yy-mm-dd" } ); } );
 
     if (context == 'list' || context == 'tagline')
     {
@@ -414,6 +426,11 @@ function page_load(context)
         );
         document.getElementById("input_search").focus();
 
+        if (context == 'list')
+        {
+            document.getElementById("dropdown_so").value = sort_order;
+            document.getElementById("dropdown_sk").value = sort_key;
+        }
     }
 
     if (context == "edit")
@@ -483,7 +500,7 @@ function do_autosave_callback(data)
         else
         {
             document.getElementById('starting_hash').value = data['starting_hash'];
-            document.title = "Localnotes : Editing " + data['title'];
+            document.title = "Editing " + data['title'] + "(last saved at " + data['starting_hash'] + ")";
             document.getElementById("edit_form_save_btn").disabled = false;
             document.getElementById("edit_form_cancel_btn").disabled = false;
             setTimeout(do_autosave, AUTOSAVE_SECONDS * 1000);
@@ -528,7 +545,7 @@ function show_people_autocomplete()
 
 function compare(v1, v2, recordkeeper)
 {
-    if (recordkeeper == 'count_order')
+    if (recordkeeper == 'c')
     {
         i1 = parseInt(v1);
         i2 = parseInt(v2);
@@ -569,15 +586,28 @@ function table_filter(table_id, substring)
     );
 }
 
-function table_sort(table_id, tbody_id, recordkeeper)
+function table_sort(sort_table, recordkeeper)
 {
-    var table = $('#' + table_id);
-    var tbody = $('#' + tbody_id);
+    var tbody_id = "";
+    var sort_order_element = undefined;
 
-    sort_order_element = table_id + '_' + recordkeeper;
+    if (sort_table == "p") {
+        tbody_id = "all_people_tbody";
+        if (recordkeeper == "n") { sort_order_element = "all_people_table_name_order"; }
+        if (recordkeeper == "c") { sort_order_element = "all_people_table_count_order"; }
+    }
+
+    if (sort_table == "t") {
+        tbody_id = "all_tag_tbody";
+        if (recordkeeper == "n") { sort_order_element = "all_tag_table_name_order"; }
+        if (recordkeeper == "c") { sort_order_element = "all_tag_table_count_order"; }
+    }
+
+    var tbody = $('#' + tbody_id);
     sort_order = document.getElementById(sort_order_element).value;
+
     var idx = 'first';
-    if (recordkeeper == 'count_order') {
+    if (recordkeeper == 'c') {
         idx = 'last';
     }
 
@@ -599,9 +629,9 @@ function table_sort(table_id, tbody_id, recordkeeper)
     ).appendTo(tbody);
 
     if(sort_order == "asc") {
-        document.getElementById(table_id + '_' + recordkeeper).value = "desc";
+        document.getElementById(sort_order_element).value = "desc";
     } else {
-        document.getElementById(table_id + '_' + recordkeeper).value = "asc";
+        document.getElementById(sort_order_element).value = "asc";
     }
 }
 
@@ -650,20 +680,52 @@ function go_to_page(pg_num)
     submit_list_form();
 }
 
-function expand_note(note_object_id)
+
+function collapse_messages() {
+    $('.msg_body').each(
+        function()
+        {
+            $(this).attr("style", "display:none");
+        }
+    );
+}
+
+function expand_messages() {
+    $('.msg_body').each(
+        function()
+        {
+            do_expand($(this), $(this).data("timestamp"));
+        }
+    );
+}
+
+function expand_note(timestamp)
 {
-    var current_body = $("#"+note_object_id).html();
+    $('.msg_body').each(
+        function()
+        {
+            if ($(this).data('timestamp') == timestamp) {
+                do_expand($(this), $(this).data("timestamp"));
+            }
+        }
+    );
+}
+
+
+function do_expand(obj, timestamp)
+{
+    var current_body = obj.html();
     if (current_body.length == 0)
     {
-        var timestamp = parseInt(note_object_id.split("_")[2]);
+        var ts_int = parseInt(timestamp);
 
-        $.get("/api/rendered_note_body", {'id': timestamp})
+        $.get("/api/rendered_note_body", {'id': ts_int})
             .done(
                 function (data)
                 {
-                    $("#"+note_object_id).html("<hr />" + data['body'] + "<hr />");
+                    obj.html("<hr />" + data['body'] + "<hr />");
                 }
             );
     }
-    $("#"+note_object_id).css("display", "inline");
+    obj.css("display", "inline");
 }

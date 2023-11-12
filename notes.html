@@ -4,10 +4,6 @@
 		<meta charset="utf-8">
 	    <meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>
-			Localnotes
-			{% if page_title|length > 0 %}
-			:
-			{% endif %}
 			{% if context == 'edit' %}
 			Editing
 			{% endif %}
@@ -31,18 +27,16 @@
 				{% else %}
 				var availablePeople = "";
 				{% endif %}
+
+				{% if autosave_seconds is defined %}
+				var AUTOSAVE_SECONDS = {{ autosave_seconds }};
+				{% endif %}
+
 		</script>
 		<script src="{{ url_for('static', filename = 'notes.js') }}" language="javascript"></script>
-
-
-		<script>
-  		$( function() { $( "#input_time_min" ).datepicker( { dateFormat: "yy-mm-dd" } ); } );
-  		$( function() { $( "#input_time_max" ).datepicker( { dateFormat: "yy-mm-dd" } ); } );
-		</script>
-
 	</head>
 
-	<body onload="javascript:page_load('{{ context }}')">
+	<body onload="javascript:page_load('{{ context }}', '{{ active_project }}', '{{ so }}', '{{ sk }}')">
 
     {% include "header.html" %}
 

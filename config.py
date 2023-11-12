@@ -7,12 +7,14 @@ class Config(object):
 
     def __init__(self):
         # defaults
-        self.DEFAULT_BASE_PATH = os.path.join(pathlib.Path.home(), 'localnotes')
         self.DEFAULT_NN = 25
         self.HTTP_PORT = 80
         self.USAGE_STATS = 0
         self.ACTIVE_PROJECT = None
+        self.AUTOSAVE = True
+        self.AUTOSAVE_SECONDS = 30
         self.PROJECT_LIST = []
+        self.DEBUG = None
 
         self.active_notes_dir = None
 
@@ -44,7 +46,10 @@ class Config(object):
         self.DEFAULT_NN = cfg.get('DEFAULT_NN', self.DEFAULT_NN)
         self.HTTP_PORT = cfg.get('HTTP_PORT', self.HTTP_PORT)
         self.USAGE_STATS = cfg.get('USAGE_STATS', self.USAGE_STATS)
+        self.AUTOSAVE = cfg.get('AUTOSAVE', self.AUTOSAVE)
+        self.AUTOSAVE_SECONDS = cfg.get('AUTOSAVE_SECONDS', self.AUTOSAVE_SECONDS)
         self.ACTIVE_PROJECT = cfg.get('ACTIVE_PROJECT', None)
+        self.DEBUG = cfg.get('DEBUG', None)  # if DEBUG is not in the config don't set it
 
         self.PROJECT_LIST = []
         project_list = cfg.get("PROJECT_LIST", [])
@@ -59,7 +64,7 @@ class Config(object):
         if len(self.PROJECT_LIST) == 0:
             self.PROJECT_LIST = [
                 {'PROJECT_NAME': 'default_project',
-                 'PROJECT_PATH': os.path.join(self.DEFAULT_BASE_PATH, "default_project")
+                 'PROJECT_PATH': os.path.join(self.get_config_file_path(), "default_project")
                  }
             ]
             self.ACTIVE_PROJECT = "default_project"
@@ -83,13 +88,19 @@ class Config(object):
         except FileExistsError:
             pass
         with open(fn, 'w') as fp:
-            b = json.dumps({
+            d = {
                 'DEFAULT_NN': self.DEFAULT_NN,
                 'HTTP_PORT': self.HTTP_PORT,
                 'USAGE_STATS': self.USAGE_STATS,
                 'ACTIVE_PROJECT': self.ACTIVE_PROJECT,
+                'AUTOSAVE': self.AUTOSAVE,
+                'AUTOSAVE_SECONDS': self.AUTOSAVE_SECONDS,
                 'PROJECT_LIST': self.PROJECT_LIST
-            })
+            }
+            if self.DEBUG is not None:
+                d['DEBUG'] = self.DEBUG
+
+            b = json.dumps(d)
             fp.write(b)
 
     def create_project(self, project_name, new_path=None, fail_if_exists=True) -> (bool, str):
@@ -99,7 +110,7 @@ class Config(object):
                 return False, "Project already exists: \"{0}\"".format(project_name)
             else:
                 return True, ""
-        new_path = new_path or os.path.join(self.DEFAULT_BASE_PATH, project_name)
+        new_path = new_path or os.path.join(self.get_config_file_path(), project_name)
         d = {'PROJECT_NAME': project_name, 'PROJECT_PATH': new_path}
         self.PROJECT_LIST.append(d)
         self.save_config_file()
@@ -125,6 +136,9 @@ class Config(object):
 
     def get_active_project_name(self) -> str:
         return self.ACTIVE_PROJECT
+
+    def get_autosave_info(self) -> (bool, int):
+        return self.AUTOSAVE, self.AUTOSAVE_SECONDS
 
     def get_project_list(self) -> list[str]:
         return [d['PROJECT_NAME'] for d in self.PROJECT_LIST]

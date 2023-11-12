@@ -10,7 +10,7 @@
         &nbsp; &nbsp; &nbsp;
         Image pane: <a href="javascript:image_edit_frame_show();">show</a> | <a href="javascript:image_edit_frame_hide();">hide</a>
         &nbsp; &nbsp; &nbsp;
-        <input class="form-check-input" type="checkbox" id="autosave_check" checked>
+        <input class="form-check-input" type="checkbox" id="autosave_check" {% if autosave %} checked {% endif %} >
         <label class="form-check-label" for="autosave_check">Auto-Save</label>
         </p>
         </div>
@@ -32,13 +32,12 @@
     <div class="col" id="edit_div">
 
         <form id="save_form" action="/save" method="POST" enctype="application/x-www-form-urlencoded">
-        <input type="hidden" id="id" name="id" value="{{ id }}" />
-        <input type="hidden" id="starting_hash" name="starting_hash" value="{{ starting_hash }}" />
-        <textarea class="form-control form-control-sm flex-grow-1 txt_sans" form="save_form" id="big_text" name="big_text">{{ note_body }}</textarea>
+            <input type="hidden" id="id" name="id" value="{{ id }}" />
+            <input type="hidden" id="starting_hash" name="starting_hash" value="{{ starting_hash }}" />
+            <textarea class="form-control form-control-sm flex-grow-1 txt_sans" id="big_text" name="big_text">{{ note_body }}</textarea>
+            <input type="submit" id="edit_form_save_btn" class="btn btn-primary" value="Save" />
         </form>
-        <button id="edit_form_save_btn" class="btn btn-primary" onclick="document.getElementById('save_form').submit();">Save</button>
         <button id="edit_form_cancel_btn"  class="btn" onclick="window.location.href='/cancel/{{ id }}';">Cancel</button>
-
     </div>
 
     <div class="col-4 col-lg-3 col-xl-3" style="display:none" id="ul_note_link_div">
@@ -46,7 +45,7 @@
         <input type="text" class="form-control form-control-sm" id="note_link_text_field" name="note_link_text_field">
         <button id="title_search_btn" class="btn btn-primary" onclick="javascript:do_title_search();">Search</button>
         <button class="btn" onclick="javascript:close_title_search();">Close</button>
-        <ul name="title_search_ul" id="title_search_ul">
+        <ul id="title_search_ul">
         </ul>
     </div>
 

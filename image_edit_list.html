@@ -16,7 +16,7 @@
     		<hr />
 			<p>
 				<input class="btn btn-danger" onclick="window.location='/image_del/{{ id }}/{{ img_ref }}'" value="X" /> Image {{ img_ref }}<br />
-				<a href="/image/{{ id }}/{{ img_ref }}" target="_new"><img class="img_footer" src="/image/{{ id }}/{{ img_ref }}"></a>
+				<a href="/image/{{ id }}/{{ img_ref }}" target="img_{{ id }}_{{ img_ref }}"><img class="img_footer" src="/image/{{ id }}/{{ img_ref }}"></a>
 			</p>
 		{% endfor %}
 	{% endif %}

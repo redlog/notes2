@@ -1,4 +1,5 @@
 import os
+import pathlib
 from collections import Counter, defaultdict
 import time
 import datetime
@@ -63,14 +64,14 @@ class Index(object):
                 b = fp.read()
                 obj = json.loads(b)
                 hash_ = hashlib.md5(b.encode("utf-8")).hexdigest()
-        except (FileNotFoundError, JSONDecodeError) as e:
+        except FileNotFoundError as e:
             # create an empty index
             obj = {'project_config': {'index_trigrams': 0},
                    'notes': [], 'tags': [], 'people': [], 'tfidf_vocab': [], 'tfidf_dfs': [], 'tfidf_inv_idx': [],
                    'inlinks': {}
                    }
 
-        self.notes = [Note(n['tags'], n['people'], n['title'], n['timestamp'], n['last_edit_time'], n['token_count']) for n in obj['notes']]
+        self.notes = [Note(n['tags'], n['people'], n['tag_mentions'], n['people_mentions'], n['title'], n['timestamp'], n['last_edit_time'], n['token_count']) for n in obj['notes']]
         self.people = Counter(dict(obj['people']))
         self.tags = Counter(dict(obj['tags']))
         self.tfidf_vocab = obj['tfidf_vocab']
@@ -276,6 +277,8 @@ class Index(object):
 
         tags = None
         people = None
+        tag_mentions = None
+        people_mentions = None
         title = None
 
         if parse:
@@ -299,24 +302,26 @@ class Index(object):
                     title = line[2:]
                     break
 
-            # include tags inside the text
-            other_tags = map((lambda s: s.lower()), re.findall("#\w+", b))
-            tags.update(other_tags)
+            tm = map((lambda s: s.lower()), re.findall("#\w+", b))
+            tag_mentions = set(tm)
 
-            # TODO: figure out what to do with people mentioned in the text, but not attendees
-            # people.update(re.findall("@\w+", b))
+            pm = map((lambda s: s.lower()), re.findall("@\w+", b))
+            people_mentions = set(pm)
 
             tags = sorted(tags)
             people = sorted(people)
 
-        n = Note(tags, people, title, ts, last_edit_time)
+            tag_mentions = sorted(tag_mentions)
+            people_mentions = sorted(people_mentions)
+
+        n = Note(tags, people, tag_mentions, people_mentions, title, ts, last_edit_time)
         return n, b
 
     def add_note_to_index(self, note: Note, body: str, save=True, add_to_search_index=True) -> None:
         self.notes.append(note)
-        for t in note.tags:
+        for t in note.get_tags(True):
             self.tags[t] += 1
-        for p in note.people:
+        for p in note.get_people(True):
             self.people[p] += 1
 
         note_refs = list(map(int, re.findall("note:([0123456789]+)", body)))
@@ -385,11 +390,11 @@ class Index(object):
             self.tfidf_inv_idx[widx] = [_ for _ in self.tfidf_inv_idx[widx] if _[0] != old_note.timestamp]
 
         # remove note's tags from tag and people counts (and list if necessary)
-        for t in old_note.tags:
+        for t in old_note.get_tags(True):
             self.tags[t] -= 1
             if self.tags[t] == 0:
                 del self.tags[t]
-        for p in old_note.people:
+        for p in old_note.get_people(True):
             self.people[p] -= 1
             if self.people[p] == 0:
                 del self.people[p]
@@ -448,6 +453,13 @@ class Index(object):
         return os.path.join(path,  '{0}.lock'.format(timestamp))
 
     @staticmethod
+    def get_lock_file_time(timestamp: int, cfg: Config) -> str:
+        fn = Index.get_lock_file_name(timestamp, cfg)
+        pl = pathlib.Path(fn)
+        dttm = datetime.datetime.fromtimestamp(pl.stat().st_mtime)
+        return str(dttm)[:19]
+
+    @staticmethod
     def lock_note(timestamp: int, cfg: Config) -> bool:
         lock_file = Index.get_lock_file_name(timestamp, cfg)
         if os.path.exists(lock_file):
@@ -487,6 +499,6 @@ class Index(object):
 """.format(tags, people, (title or "(untitled)"), (body or ""))
 
         Index.save_note_file(u, template, self.cfg)
-        n = Note((tag_list or []), (people_list or []), (title or '(untitled)'), u, u)
+        n = Note((tag_list or []), (people_list or []), [], [], (title or '(untitled)'), u, u)
         self.add_note_to_index(n, template)
         return u

@@ -1,11 +1,13 @@
 import hashlib
 import os
+import sys
 import math
 import signal
 import time
 import pprint
 import json
 
+import filelock
 from flask import Flask, render_template, redirect, Response, request, send_file
 import waitress
 from urllib.parse import quote, unquote
@@ -28,6 +30,9 @@ from config import Config
 app = Flask(__name__)
 cfg: Config = None
 idx: Index = None
+start_time = None
+
+AUTOSAVE_MIN_SEC = 15
 
 
 @app.route('/favicon.ico')
@@ -42,12 +47,38 @@ def matches_filter(note: Note, filter_list: list[str]):
 
     matched = [False for _ in range(len(filter_list))]
 
+    # handle the '+' cases
+    exclusive_tags = set()
+    exclusive_people = set()
+
     for i, f in enumerate(filter_list):
+
+        # track whether there are any tags/people that need to be exclusive
+        if f[0] == '+':
+            f = f[1:]
+            if f[0] == '#':
+                exclusive_tags.update([f])
+            if f[0] == '@':
+                exclusive_people.update([f])
+
+        # otherwise ensure all tags are matches
         if f[0] == '~':
             f2 = f[1:]
-            matched[i] = ((f2 not in note.tags) and (f2 not in note.people))
+            matched[i] = ((f2 not in note.get_tags(True)) and (f2 not in note.get_people(True)))
         else:
-            matched[i] = ((f in note.tags) or (f in note.people))
+            matched[i] = ((f in note.get_tags(True)) or (f in note.get_people(True)))
+
+    # if there are any exclusive tags, then there cannot be any tags in all_tags that are not in exclusive tags.
+    # same thing for people
+    if len(exclusive_tags):
+        remainder = set(note.get_tags(False)) - exclusive_tags
+        if len(remainder):
+            return False
+
+    if len(exclusive_people):
+        remainder = set(note.get_people(False)) - exclusive_people
+        if len(remainder):
+            return False
 
     return set(matched) == {True}
 
@@ -73,14 +104,47 @@ def get_bounds(num_elements: int, page_num: int, elem_per_page: int) -> tuple[in
     return first_element, last_element, num_pages
 
 
+class Timer(object):
+
+    def __init__(self, timer_name):
+        self.timer_name = timer_name
+        self.events = {'init': time.time()}
+
+    def add_event(self, s):
+        self.events[s] = time.time()
+
+    def __enter__(self):
+        self.events['enter'] = time.time()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.events['exit ' + self.timer_name] = time.time()
+
+        if cfg.DEBUG == 0:
+            return
+
+        event_list = sorted(self.events.items(), key=itemgetter(1))
+        min_time = event_list[0][1]
+        sys.stderr.write("{0}\tstarted {1}\n".format(int(round(min_time)), self.timer_name))
+        for k, v in event_list:
+            sys.stderr.write("{0}\t\t{1} ({2:.3f} sec)\n".format(int(round(v)), k, (v-min_time)))
+
+
 def check_index_integrity(func):
 
     def cii_inner(*args, **kwargs):
-        local_hash = idx.get_local_index_hash(cfg)
-        if local_hash != idx.hash_:
-            # sys.stderr.write("Index hash {0} does not match local hash {1}.  Need to reload index!".format(idx.hash_, local_hash))
-            idx.load(cfg)
-        return func(*args, **kwargs)
+        tmr = Timer(func.__name__)
+        with tmr:
+            with filelock.FileLock(os.path.join(cfg.get_config_file_path(), "lck_" + start_time)):
+                tmr.add_event('start')
+                local_hash = idx.get_local_index_hash(cfg)
+                tmr.add_event('done_get_hash')
+                if local_hash != idx.hash_:
+                    # When could this happen?  If the index etc are on a shared drive or dropbox and someone else is making
+                    # changes.  Not a problem if that happens, but we do need to reload to have the most recent index
+                    # sys.stderr.write("Index hash {0} does not match local hash {1}.  Need to reload index!".format(idx.hash_, local_hash))
+                    idx.load(cfg)
+                    tmr.add_event('done_idx_load')
+                return func(*args, **kwargs)
 
     cii_inner.__name__ = func.__name__
     return cii_inner
@@ -90,7 +154,7 @@ def check_index_integrity(func):
 @check_index_integrity
 def list_taglines(tag: str) -> tuple[str, int]:
 
-    list_of_notes = [note for note in idx.get_notes() if matches_filter(note, [tag])]
+    list_of_notes = [note for note in idx.get_notes() if tag in note.get_tag_mentions()]
 
     # what we want to show is
     # tagline | date | link to note
@@ -154,7 +218,7 @@ def list_notes() -> tuple[str, int]:
 
     filter_list: list = []
     if len(filter_raw):
-        filter_list = [unquote(s) for s in re.split("[, +]", filter_raw) if ((len(s) > 1) and (s[0] in ['@', '#'])) or ((len(s) > 2) and (s[0] == '~') and (s[1] in ['@', '#']))]
+        filter_list = [unquote(s) for s in re.split("[, ]", filter_raw) if (len(s) > 1 and s[0] in ['@', '#']) or (len(s) > 2 and s[0] in ['~', '+'] and s[1] in ['@', '#'])]
 
     try:
         time_min_num = int(time.mktime(dateutil.parser.parse(time_min[:10]).timetuple()))
@@ -199,8 +263,8 @@ def list_notes() -> tuple[str, int]:
     notes_list = []
     for n in note_subset:
         d = {
-            'tag_list': [(quote(t), t) for t in n.tags],
-            'people_list': [(quote(p), p) for p in n.people],
+            'tag_list': [(quote(t), t) for t in n.get_tags(True)],
+            'people_list': [(quote(p), p) for p in n.get_people(True)],
             'timestamp': n.timestamp,
             'dttm_str': str(datetime.datetime.fromtimestamp(n.timestamp))[:19],
             'last_edit_str': str(datetime.datetime.fromtimestamp(n.last_edit_time))[:19],
@@ -232,6 +296,7 @@ def list_notes() -> tuple[str, int]:
     return render_template('notes.html', **d), 200
 
 
+# TODO: this might not need to check index integrity
 @app.route('/api/rendered_note_body')
 @check_index_integrity
 def get_rendered_note_body() -> Response:
@@ -244,6 +309,7 @@ def get_rendered_note_body() -> Response:
     return Response(json.dumps({'body': note_body_md}), mimetype='text/json')
 
 
+# TODO: this might not need to check index integrity
 @app.route('/image/<int:note_id>/<int:img_num>')
 @check_index_integrity
 def read_image(note_id: int, img_num: int) -> Response:
@@ -322,8 +388,8 @@ def read_note(note_id: int) -> tuple[str, int]:
 
     d = {'context': 'read',
          'id': note_id,
-         'tag_list': [(quote(t), t) for t in note.tags],
-         'people_list': [(quote(p), p) for p in note.people],
+         'tag_list': [(quote(t), t) for t in note.get_tags(False)],
+         'people_list': [(quote(p), p) for p in note.get_people(False)],
          'timestamp_str': str(dttm)[:19],
          'filename': note.get_file_name(cfg),
          'note_body_md': note_body_md,
@@ -365,6 +431,7 @@ def show_image_edit_list(note_id: int) -> tuple[str, int]:
 @app.route('/edit/<int:note_id>', methods=['GET'])
 @check_index_integrity
 def edit_note(note_id: int) -> tuple[str, int]:
+    clobber: int = request.args.get('clobber', 0, int)
 
     try:
         note, note_body = Index.read_note_file(note_id, cfg)
@@ -373,6 +440,9 @@ def edit_note(note_id: int) -> tuple[str, int]:
 
     starting_hash = hashlib.md5(note_body.encode("utf-8")).hexdigest()
 
+    if clobber == 1:
+        _ = Index.unlock_note(note_id, cfg)
+
     r = Index.lock_note(note_id, cfg)
 
     if not r:
@@ -380,15 +450,19 @@ def edit_note(note_id: int) -> tuple[str, int]:
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'page_title': "Error: note {0} is being edited in another window.".format(note_id),
-            'message': "Error: note {0} is being edited in another window.<br /><br /><i>Lock file: {1}</i>".format(
-                note_id, Index.get_lock_file_name(note_id, cfg))
+            'message': "Error: note {0} is being edited in another window.<br /><br /><i>Lock file: {1}</i><br />Lock created: {2}<br /><br /><a href=\"/edit/{0}?clobber=1\">Click here to do it anyway<a>.  Warning: This may result in data loss".format(
+                note_id, Index.get_lock_file_name(note_id, cfg), Index.get_lock_file_time(note_id, cfg))
         }
         return render_template("notes.html", **d), 403
 
     pl = idx.get_people()
     pl = list(map(itemgetter(0), pl))
 
+    _as, _ass = cfg.get_autosave_info()
+
     d = {'context': 'edit',
+         'autosave': _as,
+         'autosave_seconds': max(AUTOSAVE_MIN_SEC, _ass),
          'id': note_id,
          'note_body': note_body,
          'page_title': note.title,
@@ -469,8 +543,8 @@ def title_search() -> Response:
     for n in idx.get_notes():
         if n.title.lower().find(search_str) > -1:
             d = {
-                'tag_list': [(quote(t), t) for t in n.tags],
-                'people_list': [(quote(p), p) for p in n.people],
+                'tag_list': [(quote(t), t) for t in n.get_tags(True)],
+                'people_list': [(quote(p), p) for p in n.get_people(True)],
                 'timestamp': n.timestamp,
                 'dttm_str': str(datetime.datetime.fromtimestamp(n.timestamp))[:19],
                 'title': n.title,
@@ -501,7 +575,7 @@ def autosave() -> Response:
     current_hash = hashlib.md5(current_note_body.encode("utf-8")).hexdigest()
 
     if starting_hash != current_hash:
-        err_msg = "Error: note {0} has changed unexpectedly!\n\nStarting hash: {1} Current hash: {2}\n\nFile not saved, since doing so would overwrite more recent changes.  To save your changes, copy the raw markdown below into another file and try again."
+        err_msg = "Error: note {0} has changed unexpectedly!\n\nStarting hash: {1} Current hash: {2}\n\nFile not saved, since doing so would overwrite more recent changes.  To save your changes, copy the raw markdown below into another file and try again.".format(id_, starting_hash, current_hash)
         response = {'starting_hash': '', 'error_message': err_msg}
         return Response(json.dumps(response), mimetype='text/json')
 
@@ -553,7 +627,7 @@ def save_note() -> Union[Response, tuple[str, int]]:
         d = {
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-            'page_title': "Error: note {0} has changed unexpectedly!".format(id_),
+            'page_title': "Error: note {0} has changed unexpectedly!",
             'message': "Error: note {0} has changed unexpectedly!<br /><br /><i>Starting hash: {1}<br />Current hash: {2}</i><br /><br />File not saved, since doing so would overwrite more recent changes.  To save your changes, copy the raw markdown below into another file and try again.<br /><br /><pre style=\"background-color: #cccccc\">{3}</pre>".format(
                 id_, starting_hash, current_hash, escape(text_))
         }
@@ -610,7 +684,7 @@ def clone_note(note_id: int) -> Union[Response, tuple[str, int]]:
         return "<html><body>File not found: {0}</body></html>".format(note_id), 404
 
     body = "Cloned from note:{0}".format(note_id)
-    unix_time = idx.new_file(tag_list=note.tags, people_list=note.people, title=note.title, body=body)
+    unix_time = idx.new_file(tag_list=note.get_tags(False), people_list=note.get_people(False), title=note.title, body=body)
     url = "/edit/{0}".format(unix_time)
     return redirect(url, code=302)
 
@@ -702,11 +776,14 @@ def exit_cleanly():
 
 
 def run_app(cfg_: Config) -> None:
-    global app, cfg, idx
+    global app, cfg, idx, start_time
     cfg = cfg_
     idx = Index()
     idx.load(cfg)
+    start_time = str(int(round(time.time())))
 
     print("Localnotes server is running at http://localhost:{0}\n".format(cfg.get_http_port()))
+
+    # app.run(host="127.0.0.1", port=cfg.get_http_port(), processes=1)
     waitress_server = waitress.server.WSGIServer(app, listen="127.0.0.1:{0}".format(cfg.get_http_port()))
     waitress_server.run()

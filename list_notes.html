@@ -76,10 +76,6 @@
 								<option value="desc">Desc</option>
 							</select>
 							<input type="button" class="btn btn-primary btn-sm" onclick="javascript:re_sort_list();" value="Go">
-							<script language="javascript">
-						  		document.getElementById("dropdown_so").value = "{{ so }}";
-						  		document.getElementById("dropdown_sk").value = "{{ sk }}";
-							</script>
 							</div>
 						</td>
 					</tr>
@@ -110,10 +106,10 @@
 						{% for p_quot, p in note.people_list %}
 							<a href="/?filter={{ p_quot }}">{{ p }}</a> &nbsp; | &nbsp;
 						{% endfor %}
-						<a href="/edit/{{ note.timestamp }}">edit</a> &nbsp; | &nbsp; <a href="/clone/{{ note.timestamp }}">clone</a> &nbsp; | &nbsp; <a href="javascript:expand_note('msg_body_{{ note.timestamp }}');">expand</a>
+						<a href="/edit/{{ note.timestamp }}">edit</a> &nbsp; | &nbsp; <a href="/clone/{{ note.timestamp }}">clone</a> &nbsp; | &nbsp; <a href="javascript:expand_note('{{ note.timestamp }}');">expand</a>
 					</span>
 				</div>
-				<span class="msg_body" id="msg_body_{{ note.timestamp }}"></span>
+				<span class="msg_body" data-timestamp="{{ note.timestamp }}"></span>
 				{% endfor %}
 			</div><!-- col -->
 		</div><!-- row -->
