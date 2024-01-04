@@ -1,4 +1,7 @@
 
+HEIGHT_OF_BUTTONS = 80;
+HEIGHT_OF_AD_FRAME = 0; // 50;  /* 10 px taller than the actual ad frame */
+
 function expand_delete() {
     d = document.getElementById("delete_form_div");
     d.style.display = "";
@@ -15,7 +18,7 @@ function set_scrollable_div_height(div_id)
     var vh = window.innerHeight;
     var top = d.getBoundingClientRect().top;
     var currHeight = d.style.height;
-    var newHeight = vh - top - 40;
+    var newHeight = vh - top - HEIGHT_OF_AD_FRAME;
     d.style.height = "" + newHeight + "px";
 }
 
@@ -441,7 +444,7 @@ function page_load(context, active_project, sort_order, sort_key)
         var vh = window.innerHeight;
         var top = d.getBoundingClientRect().top;
         var currHeight = d.style.height;
-        var newHeight = vh - top - 80;
+        var newHeight = vh - top - HEIGHT_OF_BUTTONS - HEIGHT_OF_AD_FRAME;
         d.style.height = "" + newHeight + "px";
 
         window.addEventListener("resize",
@@ -454,7 +457,7 @@ function page_load(context, active_project, sort_order, sort_key)
                 var vh = window.innerHeight;
                 var top = d.getBoundingClientRect().top;
                 var currHeight = d.style.height;
-                var newHeight = vh - top - 80;
+                var newHeight = vh - top - HEIGHT_OF_BUTTONS - HEIGHT_OF_AD_FRAME;
                 d.style.height = "" + newHeight + "px";
             }
         );
@@ -468,7 +471,59 @@ function page_load(context, active_project, sort_order, sort_key)
 
         setTimeout(do_autosave, AUTOSAVE_SECONDS * 1000);
     }
+
+    if (telemetry != null) {
+        do_telemetry();
+    }
 }
+
+function do_telemetry()
+{
+    // alert(JSON.stringify(telemetry));
+    api_endpoint = "https://79wghhkxid.execute-api.us-east-1.amazonaws.com/default/localnotes_telemetry";
+    $.ajax({
+        url: api_endpoint,
+        dataType: 'json',
+        data: {'telemetry': JSON.stringify(telemetry)},
+
+        error: function (jqXHR, textStatus, error)
+            {
+                // alert("ajax fail");
+            },
+
+        success: function (data, textStatus, jqXHR)
+            {
+                // alert("ajax success");
+                // (a) show the UI message
+                // alert(JSON.stringify(data));
+                if (data['message_type'] == 'info' || data['message_type'] == 'warning' ||  data['message_type'] == 'danger' || data['message_type'] == 'success')
+                {
+                    div = document.getElementById("message_row_div");
+                    div.style.display = "";
+                    class_name = "alert-" + data['message_type'];
+                    div.classList.add(class_name);
+                    $("#message_row_inner_span").html(data['message'])
+                }
+
+                // (b) record the timestamp
+                do_telemetry_callback();
+            },
+    });
+}
+
+
+function do_telemetry_callback()
+{
+    // alert(JSON.stringify(telemetry));
+    $.get("/api/telemetry_callback", {})
+        .done( function (data) {
+            // alert("telemetry callback ok");
+        } )
+        .fail( function (jqXHR, textStatus, error) {
+            // alert("telemetry callback fail");
+        } );
+}
+
 
 function do_autosave()
 {
@@ -500,7 +555,7 @@ function do_autosave_callback(data)
         else
         {
             document.getElementById('starting_hash').value = data['starting_hash'];
-            document.title = "Editing " + data['title'] + "(last saved at " + data['starting_hash'] + ")";
+            document.title = "Editing " + data['title'] + "(last saved at " + data['last_edit_time'] + ")";
             document.getElementById("edit_form_save_btn").disabled = false;
             document.getElementById("edit_form_cancel_btn").disabled = false;
             setTimeout(do_autosave, AUTOSAVE_SECONDS * 1000);
@@ -549,7 +604,6 @@ function compare(v1, v2, recordkeeper)
     {
         i1 = parseInt(v1);
         i2 = parseInt(v2);
-        //alert("v1 = " + v1 + "   v2 = " + v2)
         if (i1 > i2) { return 1; }
         if (i1 < i2) { return -1; }
         return 0;

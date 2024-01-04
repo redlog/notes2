@@ -1,12 +1,13 @@
 import os
 import datetime
+from typing import List
 
 from config import Config
 
 
 class Note(object):
 
-    def __init__(self, tags: list[str], people: list[str], tag_mentions: list[str], people_mentions: list[str],
+    def __init__(self, tags: List[str], people: List[str], tag_mentions: List[str], people_mentions: List[str],
                  title: str, timestamp: int, last_edit_time=None, token_count=0):
         self.__tags = tags
         self.__people = people
@@ -34,7 +35,7 @@ class Note(object):
         return fn
 
     @staticmethod
-    def get_taglines(body: str, tag: str) -> list[str]:
+    def get_taglines(body: str, tag: str) -> List[str]:
         return [line.strip() for line in body.split('\n') if line.strip().find(tag) > -1]
 
     def get_tags(self, include_mentions: bool):

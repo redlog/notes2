@@ -3,11 +3,14 @@ from wx.adv import TaskBarIcon
 import threading
 import urllib.request
 import webbrowser
+from wx.lib.embeddedimage import PyEmbeddedImage
 
 from flask_server import run_app
 from config import Config
 
 cfg = None
+
+emb_icon = PyEmbeddedImage("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAEiSURBVFhHYxgFo2DQAB0dnf9AiijMyMj4PyYmBsQGA3d3dww1+LCtrS2IBgNGKP0/KyuLYYf7IyiXMPiccpLh48ePDL9+/WKwtLRkOJ65HipDGHguT2TYvn07iMnIKCMj8z88PJxhvd1NsCQp4J7/FgZ9fX2Gi8U7oSLEA/el8QwsLCzgEPivtNEHIkoiYCq+wXDnzh0ojzTg6+vLcPnyZcocQC5o+x7DEBERAUp3DExQMbqCKs4lDNOmTWO4e/fuwDgABHqktzF8//594BwAA6MOGHXAqANGHTDqgFEHjDpg4B0gKirKkHDRDMqlHyh67MHAwcGBaJa3trYyzNU5DuXSFmTddmAoKSkBMWH2MzCIiYlhdCBohYWEhED0YAAMDACRVnh0V37IgQAAAABJRU5ErkJggg==")
 
 
 class WxTaskBarIcon(TaskBarIcon):
@@ -15,7 +18,8 @@ class WxTaskBarIcon(TaskBarIcon):
     def __init__(self, frame):
         TaskBarIcon.__init__(self)
         self.frame = frame
-        self.SetIcon(wx.Icon('localnotes_icon.png', wx.BITMAP_TYPE_PNG), 'Localnotes')
+        made_icon = emb_icon.GetIcon()
+        self.SetIcon(made_icon, 'Localnotes')
         self.Bind(wx.EVT_MENU, self.OnTaskBarOpen, id=1)
         self.Bind(wx.EVT_MENU, self.OnTaskBarClose, id=2)
 
@@ -52,7 +56,7 @@ class WxFrame(wx.Frame):
 class WxApp(wx.App):
 
     def OnInit(self):
-        frame = WxFrame(None, -1, 'wx.adv - TaskBarIcon')
+        frame = WxFrame(None, -1, '')
         #frame.Show(True)
         self.SetTopWindow(frame)
         return True

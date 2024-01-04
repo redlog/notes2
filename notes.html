@@ -32,6 +32,12 @@
 				var AUTOSAVE_SECONDS = {{ autosave_seconds }};
 				{% endif %}
 
+				{% if telemetry is defined %}
+				var telemetry = {{ telemetry|tojson }};
+				{% else %}
+				var telemetry = null;
+				{% endif %}
+
 		</script>
 		<script src="{{ url_for('static', filename = 'notes.js') }}" language="javascript"></script>
 	</head>
@@ -39,7 +45,6 @@
 	<body onload="javascript:page_load('{{ context }}', '{{ active_project }}', '{{ so }}', '{{ sk }}')">
 
     {% include "header.html" %}
-
 
     <!--
     -- include the correct html file based on the context
@@ -68,6 +73,9 @@
 	{% if context == 'export' %}
 		{% include 'export.html' %}
 	{% endif %}
+
+	<!-- ad footer -->
+	<!-- iframe src="/static/test_ad_file.html" title="Localnotes Ad Server" height="40px" width="100%" style="border:none" scrolling="no"></iframe -->
 
 	</body>
 </html>

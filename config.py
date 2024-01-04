@@ -1,6 +1,9 @@
 import os
 import json
 import pathlib
+from typing import List
+import time
+import datetime
 
 
 class Config(object):
@@ -8,13 +11,17 @@ class Config(object):
     def __init__(self):
         # defaults
         self.DEFAULT_NN = 25
-        self.HTTP_PORT = 80
-        self.USAGE_STATS = 0
+        self.HTTP_PORT = 8000
         self.ACTIVE_PROJECT = None
         self.AUTOSAVE = True
         self.AUTOSAVE_SECONDS = 30
         self.PROJECT_LIST = []
+        self.CREATION_TIME = int(time.mktime(datetime.datetime.now().timetuple()))
+        self.LAST_TELEMETRY = 0
+
         self.DEBUG = None
+        self.OBFUSCATE = None
+        self.DISABLE_TELEMETRY = None
 
         self.active_notes_dir = None
 
@@ -45,11 +52,16 @@ class Config(object):
         # when necessary populate it with defaults
         self.DEFAULT_NN = cfg.get('DEFAULT_NN', self.DEFAULT_NN)
         self.HTTP_PORT = cfg.get('HTTP_PORT', self.HTTP_PORT)
-        self.USAGE_STATS = cfg.get('USAGE_STATS', self.USAGE_STATS)
         self.AUTOSAVE = cfg.get('AUTOSAVE', self.AUTOSAVE)
         self.AUTOSAVE_SECONDS = cfg.get('AUTOSAVE_SECONDS', self.AUTOSAVE_SECONDS)
+        self.CREATION_TIME = cfg.get('CREATION_TIME', self.CREATION_TIME)
         self.ACTIVE_PROJECT = cfg.get('ACTIVE_PROJECT', None)
-        self.DEBUG = cfg.get('DEBUG', None)  # if DEBUG is not in the config don't set it
+        self.LAST_TELEMETRY = cfg.get('LAST_TELEMETRY', self.LAST_TELEMETRY)
+
+        # items that, if they are not in the config, don't set them
+        self.DEBUG = cfg.get('DEBUG', None)
+        self.OBFUSCATE = cfg.get('OBFUSCATE', None)
+        self.DISABLE_TELEMETRY = cfg.get('DISABLE_TELEMETRY', None)
 
         self.PROJECT_LIST = []
         project_list = cfg.get("PROJECT_LIST", [])
@@ -91,14 +103,21 @@ class Config(object):
             d = {
                 'DEFAULT_NN': self.DEFAULT_NN,
                 'HTTP_PORT': self.HTTP_PORT,
-                'USAGE_STATS': self.USAGE_STATS,
                 'ACTIVE_PROJECT': self.ACTIVE_PROJECT,
                 'AUTOSAVE': self.AUTOSAVE,
                 'AUTOSAVE_SECONDS': self.AUTOSAVE_SECONDS,
-                'PROJECT_LIST': self.PROJECT_LIST
+                'PROJECT_LIST': self.PROJECT_LIST,
+                'CREATION_TIME': self.CREATION_TIME,
+                'LAST_TELEMETRY': self.LAST_TELEMETRY
             }
+
+            # items to save only if they are already set
             if self.DEBUG is not None:
                 d['DEBUG'] = self.DEBUG
+            if self.OBFUSCATE is not None:
+                d['OBFUSCATE'] = self.OBFUSCATE
+            if self.DISABLE_TELEMETRY is not None:
+                d['DISABLE_TELEMETRY'] = self.DISABLE_TELEMETRY
 
             b = json.dumps(d)
             fp.write(b)
@@ -140,5 +159,8 @@ class Config(object):
     def get_autosave_info(self) -> (bool, int):
         return self.AUTOSAVE, self.AUTOSAVE_SECONDS
 
-    def get_project_list(self) -> list[str]:
+    def get_project_list(self) -> List[str]:
         return [d['PROJECT_NAME'] for d in self.PROJECT_LIST]
+
+    def obfuscate(self) -> bool:
+        return self.OBFUSCATE == 1

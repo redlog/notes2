@@ -9,9 +9,16 @@ from operator import itemgetter
 import hashlib
 import math
 import re
+from typing import List, Tuple
+
+import dateutil
 
 from note import Note
 from config import Config
+
+WELCOME_MESSAGE = """
+Visit our guide to using Localnotes at the [getting started](http://redlog.net/localnotes/getting_started.html) page. 
+"""
 
 
 class Index(object):
@@ -21,7 +28,7 @@ class Index(object):
         self.cfg = None
         self.hash_ = None
 
-        self.notes: list[Note] = []
+        self.notes: List[Note] = []
         self.tags = Counter()
         self.people = Counter()
 
@@ -58,20 +65,29 @@ class Index(object):
     def load(self, cfg: Config):
         self.cfg = cfg
         hash_ = None
+        is_new_index = False
+        needs_new_obj = False
 
         try:
             with open(self.get_index_filename(), 'r') as fp:
                 b = fp.read()
                 obj = json.loads(b)
                 hash_ = hashlib.md5(b.encode("utf-8")).hexdigest()
-        except FileNotFoundError as e:
-            # create an empty index
+        except FileNotFoundError:
+            needs_new_obj = True
+            is_new_index = True  # i.e. not a broken one, a brand new one
+        except JSONDecodeError:
+            needs_new_obj = True
+
+        if needs_new_obj:
+            # if there is either no index, or a corrupted index, create an empty index
             obj = {'project_config': {'index_trigrams': 0},
                    'notes': [], 'tags': [], 'people': [], 'tfidf_vocab': [], 'tfidf_dfs': [], 'tfidf_inv_idx': [],
                    'inlinks': {}
                    }
 
         self.notes = [Note(n['tags'], n['people'], n['tag_mentions'], n['people_mentions'], n['title'], n['timestamp'], n['last_edit_time'], n['token_count']) for n in obj['notes']]
+
         self.people = Counter(dict(obj['people']))
         self.tags = Counter(dict(obj['tags']))
         self.tfidf_vocab = obj['tfidf_vocab']
@@ -81,37 +97,66 @@ class Index(object):
         self.hash_ = hash_
         self.inlinks = dict(obj['inlinks'])
 
+        # add the "getting started" message (adding this note will save the index too)
+        if is_new_index:
+            # timestamp_str = "2024-01-01 12:00:00"
+            ts = None  # int(time.mktime(dateutil.parser.parse(timestamp_str).timetuple()))
+            self.new_file(['#help', '#localnotes'], people_list=[], title="Welcome to Localnotes!", body=WELCOME_MESSAGE, override_timestamp=ts)
+
     def save(self) -> None:
         try:
             os.makedirs(self.cfg.get_notes_dir())
         except FileExistsError:
             pass
-        filename = os.path.join(self.cfg.get_notes_dir(), 'index.json')
-        with open(filename, 'w') as fp:
-            body = json.dumps({
-                "project_config": self.project_config,
-                "notes": [n.to_json() for n in self.notes],
-                "people": [(t, self.people[t]) for t in self.people],
-                "tags": [(t, self.tags[t]) for t in self.tags],
-                "inlinks": [(k, self.inlinks[k]) for k in self.inlinks.keys()],
-                "tfidf_vocab": self.tfidf_vocab,
-                "tfidf_dfs": self.tfidf_dfs,
-                "tfidf_inv_idx": self.tfidf_inv_idx,
-            })
-            fp.write(body)
-            self.hash_ = hashlib.md5(body.encode("utf-8")).hexdigest()
 
-    def get_tags(self) -> list[(str, int)]:
+        body = json.dumps({
+            "project_config": self.project_config,
+            "notes": [n.to_json() for n in self.notes],
+            "people": [(t, self.people[t]) for t in self.people],
+            "tags": [(t, self.tags[t]) for t in self.tags],
+            "inlinks": [(k, self.inlinks[k]) for k in self.inlinks.keys()],
+            "tfidf_vocab": self.tfidf_vocab,
+            "tfidf_dfs": self.tfidf_dfs,
+            "tfidf_inv_idx": self.tfidf_inv_idx,
+        })
+
+        # handle the fact that sometimes this times out, e.g. saving to a remote location
+        success = 0
+        retries = 0
+        filename: str = os.path.join(self.cfg.get_notes_dir(), 'index.json')
+        while success == 0 and (retries < 3):
+            try:
+                with open(filename, 'w') as fp:
+                    fp.write(body)
+                    success = 1
+            except TimeoutError:
+                retries += 1
+
+        self.hash_ = hashlib.md5(body.encode("utf-8")).hexdigest()
+
+    def get_tag_count(self) -> int:
+        return len(self.tags)
+
+    def get_people_count(self) -> int:
+        return len(self.people)
+
+    def get_note_count(self) -> int:
+        return len(self.notes)
+
+    def get_inlink_count(self) -> int:
+        return len(self.inlinks)
+
+    def get_tags(self) -> List[Tuple[str, int]]:
         tag_list = [(t, self.tags[t]) for t in self.tags]
         tag_list.sort(key=itemgetter(1), reverse=True)
         return tag_list
 
-    def get_people(self) -> list[(str, int)]:
+    def get_people(self) -> List[Tuple[str, int]]:
         people_list = [(t, self.people[t]) for t in self.people]
         people_list.sort(key=itemgetter(1), reverse=True)
         return people_list
 
-    def get_notes(self) -> list[Note]:
+    def get_notes(self) -> List[Note]:
         d = self.notes.copy()
         fn = (lambda n: n.timestamp)
         d.sort(key=fn, reverse=True)  # descending by time
@@ -124,7 +169,7 @@ class Index(object):
         dttm = datetime.datetime.fromtimestamp(m)
         return str(dttm)[:10]
 
-    def get_notes_search(self, query: str) -> list[Note]:
+    def get_notes_search(self, query: str) -> List[Note]:
         doc_scores = self._search(query)  # dict of { doc: score }
         note_list = [n for n in self.notes if n.timestamp in doc_scores]
         for n in note_list:
@@ -132,8 +177,8 @@ class Index(object):
         return note_list
 
     @staticmethod
-    def words_to_trigrams(words: list[str]) -> list[str]:
-        trigram_list: list[str] = []
+    def words_to_trigrams(words: List[str]) -> List[str]:
+        trigram_list: List[str] = []
         for w in words:
             w2 = '!' + w + '$'  # start and end tokens
             for i in range(len(w2) - 2):
@@ -170,7 +215,7 @@ class Index(object):
 
         return doc_scores
 
-    def body_to_words(self, txt: str) -> list[str]:
+    def body_to_words(self, txt: str) -> List[str]:
 
         txt2 = re.sub("<!-- tags: (.*) -->", "", txt)
         txt2 = re.sub("<!-- attendees: (.*) -->", "", txt2)
@@ -243,7 +288,7 @@ class Index(object):
         self.save()
 
     @staticmethod
-    def list_note_images(timestamp: int, cfg: Config) -> list[int]:
+    def list_note_images(timestamp: int, cfg: Config) -> List[int]:
         path = Index.get_path_from_timestamp(timestamp, cfg)
         img_dir_path = os.path.join(path, str(timestamp))
         if os.path.exists(img_dir_path):
@@ -268,8 +313,8 @@ class Index(object):
     def read_note_file(timestamp: int, cfg: Config, parse=True) -> (Note, str):
         path = Index.get_path_from_timestamp(timestamp, cfg)
         fn = os.path.join(path, "{0}.md".format(timestamp))
-        with open(fn, 'r') as fp:
-            b = fp.read()
+        with open(fn, 'rb') as fp:
+            b = fp.read().decode('utf-8', 'ignore')
 
         ts = int(os.path.split(fn)[-1][:-3])
 

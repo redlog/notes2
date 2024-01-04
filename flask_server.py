@@ -1,11 +1,15 @@
 import hashlib
 import os
+import platform
+import random
 import sys
 import math
 import signal
 import time
 import pprint
 import json
+import uuid
+from typing import List, Tuple
 
 import filelock
 from flask import Flask, render_template, redirect, Response, request, send_file
@@ -31,8 +35,14 @@ app = Flask(__name__)
 cfg: Config = None
 idx: Index = None
 start_time = None
+device_uuid = uuid.getnode()
 
 AUTOSAVE_MIN_SEC = 15
+
+BUILD_VERSION = "REPLACE_WITH_BUILD_VERSION"
+BUILD_DATE = "REPLACE_WITH_BUILD_DATE"
+
+ONE_DAY_IN_SECONDS = 2 # 60 * 60 * 24
 
 
 @app.route('/favicon.ico')
@@ -40,7 +50,27 @@ def favicon():
     return send_file("static/localnotes_icon.png", mimetype='image/png')
 
 
-def matches_filter(note: Note, filter_list: list[str]):
+def get_telemetry_info():
+    d = {
+        'system': {
+            # note: we don't need IP, browser or timestamp, since the XHR will provide that
+            'build_version': BUILD_VERSION,
+            'config_create_time': cfg.CREATION_TIME,
+            'platform': {'platform': platform.platform(), 'release': platform.release(), 'version': platform.version()},
+            'uuid': device_uuid
+        },
+        'counts': {
+            'projects': len(cfg.PROJECT_LIST),
+            'notes': idx.get_note_count(),
+            'tags': idx.get_tag_count(),
+            'people': idx.get_people_count(),
+            'inlinks': idx.get_inlink_count(),
+        }
+    }
+    return d
+
+
+def matches_filter(note: Note, filter_list: List[str]):
 
     if len(filter_list) == 0:
         return True
@@ -66,7 +96,8 @@ def matches_filter(note: Note, filter_list: list[str]):
             f2 = f[1:]
             matched[i] = ((f2 not in note.get_tags(True)) and (f2 not in note.get_people(True)))
         else:
-            matched[i] = ((f in note.get_tags(True)) or (f in note.get_people(True)))
+            # note: if the tag/person is "exclusive" then don't match mentions just match note-level tag/attendee
+            matched[i] = ((f in note.get_tags(f not in exclusive_tags)) or (f in note.get_people(f not in exclusive_people)))
 
     # if there are any exclusive tags, then there cannot be any tags in all_tags that are not in exclusive tags.
     # same thing for people
@@ -83,7 +114,7 @@ def matches_filter(note: Note, filter_list: list[str]):
     return set(matched) == {True}
 
 
-def get_bounds(num_elements: int, page_num: int, elem_per_page: int) -> tuple[int, int, int]:
+def get_bounds(num_elements: int, page_num: int, elem_per_page: int) -> Tuple[int, int, int]:
     """
     Example: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
     Page: 1
@@ -119,9 +150,11 @@ class Timer(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.events['exit ' + self.timer_name] = time.time()
 
-        if cfg.DEBUG == 0:
+        if cfg.DEBUG != 1196:  # a user shouldn't be able to discover this by accident
             return
 
+        # XXX: if you try to write to stderr with a binary built with pyinstaller with flag -w (no console)
+        # then it will break.  One possibility is writing to a log file instead.
         event_list = sorted(self.events.items(), key=itemgetter(1))
         min_time = event_list[0][1]
         sys.stderr.write("{0}\tstarted {1}\n".format(int(round(min_time)), self.timer_name))
@@ -152,7 +185,7 @@ def check_index_integrity(func):
 
 @app.route('/tagline/<string:tag>')
 @check_index_integrity
-def list_taglines(tag: str) -> tuple[str, int]:
+def list_taglines(tag: str) -> Tuple[str, int]:
 
     list_of_notes = [note for note in idx.get_notes() if tag in note.get_tag_mentions()]
 
@@ -187,13 +220,14 @@ def list_taglines(tag: str) -> tuple[str, int]:
         'tagline_list': tagline_list,
         'page_title': "Taglines for " + tag,
         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
+        # 'telemetry': get_telemetry_info()
     }
     return render_template('notes.html', **d), 200
 
 
 @app.route('/', methods=['GET'])
 @check_index_integrity
-def list_notes() -> tuple[str, int]:
+def list_notes() -> Tuple[str, int]:
 
     search: str = request.args.get('search', "", str)
     filter_raw: str = request.args.get('filter', "", str)
@@ -218,7 +252,7 @@ def list_notes() -> tuple[str, int]:
 
     filter_list: list = []
     if len(filter_raw):
-        filter_list = [unquote(s) for s in re.split("[, ]", filter_raw) if (len(s) > 1 and s[0] in ['@', '#']) or (len(s) > 2 and s[0] in ['~', '+'] and s[1] in ['@', '#'])]
+        filter_list = [unquote(s).lower() for s in re.split("[, ]", filter_raw) if (len(s) > 1 and s[0] in ['@', '#']) or (len(s) > 2 and s[0] in ['~', '+'] and s[1] in ['@', '#'])]
 
     try:
         time_min_num = int(time.mktime(dateutil.parser.parse(time_min[:10]).timetuple()))
@@ -249,7 +283,7 @@ def list_notes() -> tuple[str, int]:
     # paginate
     total_notes = len(list_of_notes)
     min_, max_, n_pages = get_bounds(len(list_of_notes), pg, nn)
-    note_subset: list[Note] = list_of_notes[min_:max_ + 1]
+    note_subset: List[Note] = list_of_notes[min_:max_ + 1]
 
     all_tags = [(quote(t[0]), t[0], t[1]) for t in idx.get_tags()]
     all_people = [(quote(p[0]), p[0], p[1]) for p in idx.get_people()]
@@ -279,6 +313,21 @@ def list_notes() -> tuple[str, int]:
     if len(filter_list):
         page_title += "\"" + ', '.join(filter_list) + "\""
 
+    # telemetry = get_telemetry_info()
+    # telemetry['event']['num_notes'] = total_notes
+    # telemetry['event']['search'] = 1 if len(search) else 0
+    # telemetry['event']['filter'] = 1 if len(filter_list) else 0
+    # telemetry['event']['pg'] = pg
+    # telemetry['event']['sk'] = sk
+
+    if cfg.obfuscate():
+        all_tags = [(t[0], scramble(t[1]), t[2]) for t in all_tags]
+        all_people = [(t[0], scramble(t[1]), t[2]) for t in all_people]
+        for n in notes_list:
+            n['tag_list'] = [(t[0], scramble(t[1])) for t in n['tag_list']]
+            n['people_list'] = [(t[0], scramble(t[1])) for t in n['people_list']]
+            n['title'] = scramble(n['title'])
+
     d = {'context': 'list',
          'page_title': page_title,
          'all_tags': all_tags, 'all_people': all_people,
@@ -290,10 +339,37 @@ def list_notes() -> tuple[str, int]:
          'sk': sk,
          'so': so,
          'time_min': time_min,
-         'time_max': time_max
+         'time_max': time_max,
          }
 
+    if (time.time() - cfg.LAST_TELEMETRY) > ONE_DAY_IN_SECONDS:
+        if cfg.DISABLE_TELEMETRY != 1469:
+            d['telemetry'] = get_telemetry_info()
+
     return render_template('notes.html', **d), 200
+
+
+lowers = list('abcdefghijklmnopqrstuvwxyz')
+uppers = list('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+
+
+def repl(chr):
+    if chr in lowers:
+        return random.choice(lowers)
+    if chr in uppers:
+        return random.choice(uppers)
+    return chr
+
+
+def scramble(s: str) -> str:
+    return ''.join([repl(chr) for chr in s])
+
+
+@app.route('/api/telemetry_callback')
+def telemetry_callback() -> Response:
+    cfg.LAST_TELEMETRY = int(time.time())  # ok this isn't _exactly_ the time those variables were recorded but close enough
+    cfg.save_config_file()
+    return Response(json.dumps({}), mimetype='text/json')
 
 
 # TODO: this might not need to check index integrity
@@ -360,10 +436,13 @@ def apply_images(note_body: str, note_id: int) -> str:
 
 @app.route('/note/<int:note_id>', methods=['GET'])
 @check_index_integrity
-def read_note(note_id: int) -> tuple[str, int]:
+def read_note(note_id: int) -> Tuple[str, int]:
 
     try:
         note, note_body = Index.read_note_file(note_id, cfg)
+
+        if cfg.obfuscate():
+            note_body = scramble(note_body)
 
         # check note body for references to images
         note_body = apply_images(note_body, note_id)
@@ -386,6 +465,14 @@ def read_note(note_id: int) -> tuple[str, int]:
         t = (ilid, title)
         inlinks.append(t)
 
+    # telemetry = get_telemetry_info()
+    # telemetry['event']['note_timestamp'] = note_id
+    # telemetry['event']['note_length'] = len(note_body)
+    # telemetry['event']['note_images'] = len(img_refs)
+    # telemetry['event']['note_tags'] = len(note.get_tags(False))
+    # telemetry['event']['note_people'] = len(note.get_people(False))
+    # telemetry['event']['note_inlinks'] = len(inlinks)
+
     d = {'context': 'read',
          'id': note_id,
          'tag_list': [(quote(t), t) for t in note.get_tags(False)],
@@ -398,7 +485,14 @@ def read_note(note_id: int) -> tuple[str, int]:
          'last_edit_dttm': str(last_edit_dttm)[:19],
          'page_title': note.title,
          'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
+         # 'telemetry': telemetry
          }
+
+    if cfg.obfuscate():
+        d['tag_list'] = [(t[0], scramble(t[1])) for t in d['tag_list']]
+        d['people_list'] = [(t[0], scramble(t[1])) for t in d['people_list']]
+        d['page_title'] = scramble(d['page_title'])
+        d['inlinks'] = [(t[0], scramble(t[1])) for t in d['inlinks']]
 
     return render_template("notes.html", **d), 200
 
@@ -406,6 +500,7 @@ def read_note(note_id: int) -> tuple[str, int]:
 @app.route('/image_del/<int:note_id>/<int:img_num>')
 @check_index_integrity
 def delete_image(note_id: int, img_num: int) -> Response:
+    # XXX: cannot collect telemetry from this action
     path, filename = Index.get_image_path(note_id, img_num, cfg)
     os.unlink(os.path.join(path, filename))
     time.sleep(1)  # give the os a second to remove the file cleanly
@@ -414,7 +509,7 @@ def delete_image(note_id: int, img_num: int) -> Response:
 
 @app.route('/image_edit_list/<int:note_id>', methods=['GET'])
 @check_index_integrity
-def show_image_edit_list(note_id: int) -> tuple[str, int]:
+def show_image_edit_list(note_id: int) -> Tuple[str, int]:
 
     # if any images exist, put them at the bottom
     img_refs = idx.list_note_images(note_id, cfg)
@@ -430,7 +525,7 @@ def show_image_edit_list(note_id: int) -> tuple[str, int]:
 
 @app.route('/edit/<int:note_id>', methods=['GET'])
 @check_index_integrity
-def edit_note(note_id: int) -> tuple[str, int]:
+def edit_note(note_id: int) -> Tuple[str, int]:
     clobber: int = request.args.get('clobber', 0, int)
 
     try:
@@ -445,20 +540,28 @@ def edit_note(note_id: int) -> tuple[str, int]:
 
     r = Index.lock_note(note_id, cfg)
 
+    _as, _ass = cfg.get_autosave_info()
+
+    # telemetry = get_telemetry_info()
+    # telemetry['event']['note_timestamp'] = note_id
+    # telemetry['event']['note_length'] = len(note_body)
+    # telemetry['event']['clobber'] = clobber
+    # telemetry['event']['autosave'] = _as
+    # telemetry['event']['autosave_sec'] = _ass
+
     if not r:
         d = {
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'page_title': "Error: note {0} is being edited in another window.".format(note_id),
             'message': "Error: note {0} is being edited in another window.<br /><br /><i>Lock file: {1}</i><br />Lock created: {2}<br /><br /><a href=\"/edit/{0}?clobber=1\">Click here to do it anyway<a>.  Warning: This may result in data loss".format(
-                note_id, Index.get_lock_file_name(note_id, cfg), Index.get_lock_file_time(note_id, cfg))
+                note_id, Index.get_lock_file_name(note_id, cfg), Index.get_lock_file_time(note_id, cfg)),
+            'telemetry': telemetry
         }
         return render_template("notes.html", **d), 403
 
     pl = idx.get_people()
     pl = list(map(itemgetter(0), pl))
-
-    _as, _ass = cfg.get_autosave_info()
 
     d = {'context': 'edit',
          'autosave': _as,
@@ -468,15 +571,22 @@ def edit_note(note_id: int) -> tuple[str, int]:
          'page_title': note.title,
          'people_list': pl,
          'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-         'starting_hash': starting_hash
+         'starting_hash': starting_hash,
+         # 'telemetry': telemetry
          }
+
+    if cfg.obfuscate():
+        d['page_title'] = scramble(d['page_title'])
+        d['note_body'] = scramble(d['note_body'])
+        d['people_list'] = [(scramble(t[0]), t[1]) for t in d['people_list']]
+        d['autosave'] = False  # so you dont accidentally overwrite your actual file with garbage
 
     return render_template("notes.html", **d), 200
 
 
 @app.route('/upload', methods=['POST'])
 @check_index_integrity
-def upload_image() -> Union[Response, tuple[str, int]]:
+def upload_image() -> Union[Response, Tuple[str, int]]:
 
     id_ = request.form.get('id', 0, int)
     img_refs = idx.list_note_images(id_, cfg)
@@ -505,21 +615,23 @@ def upload_image() -> Union[Response, tuple[str, int]]:
 
 @app.route('/config')
 @check_index_integrity
-def config() -> tuple[str, int]:
+def config() -> Tuple[str, int]:
     d = {
         'context': 'config',
         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
         'config_file_path': Config.get_config_file_name(),
         'config_txt': pprint.pformat(Config.read_config_file()),
         'index_path': idx.get_index_filename(),
-        'project_config_txt': pprint.pformat(idx.get_project_config())
+        'project_config_txt': pprint.pformat(idx.get_project_config()),
+        'build_version': BUILD_VERSION, 'build_date': BUILD_DATE,
+        # 'telemetry': get_telemetry_info()
     }
     return render_template("notes.html", **d), 200
 
 
 @app.route('/cancel/<int:note_id>', methods=['GET'])
 @check_index_integrity
-def cancel_edit(note_id: int) -> Union[Response, tuple[str, int]]:
+def cancel_edit(note_id: int) -> Union[Response, Tuple[str, int]]:
     r = Index.unlock_note(note_id, cfg)
     if not r:
         d = {
@@ -527,7 +639,8 @@ def cancel_edit(note_id: int) -> Union[Response, tuple[str, int]]:
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'page_title': "Error: note {0} was not previously locked for edit.".format(note_id),
             'message': "Error: note {0} was not previously locked for edit.<br /><br /><i>Lock file: {1}</i>".format(
-                note_id, Index.get_lock_file_name(note_id, cfg))
+                note_id, Index.get_lock_file_name(note_id, cfg)),
+            # 'telemetry': get_telemetry_info()
         }
         return render_template("notes.html", **d), 403
     return redirect("/note/{0}".format(note_id), code=302)
@@ -573,6 +686,8 @@ def autosave() -> Response:
 
     current_note, current_note_body = Index.read_note_file(id_, cfg, parse=False)
     current_hash = hashlib.md5(current_note_body.encode("utf-8")).hexdigest()
+    last_ed = current_note.get_last_edit_time()
+    last_ed = str(datetime.datetime.fromtimestamp(last_ed))[:19]
 
     if starting_hash != current_hash:
         err_msg = "Error: note {0} has changed unexpectedly!\n\nStarting hash: {1} Current hash: {2}\n\nFile not saved, since doing so would overwrite more recent changes.  To save your changes, copy the raw markdown below into another file and try again.".format(id_, starting_hash, current_hash)
@@ -597,17 +712,21 @@ def autosave() -> Response:
         return Response(json.dumps(response), mimetype='text/json')
 
     new_hash = hashlib.md5(new_body.encode('utf-8')).hexdigest()
-    response = {'starting_hash': new_hash, 'title': new_note_obj.title, 'error_message': ""}
+    response = {'starting_hash': new_hash, 'title': new_note_obj.title, 'error_message': "", 'last_edit_time': last_ed}
     return Response(json.dumps(response), mimetype='text/json')
 
 
 @app.route('/save', methods=['POST'])
 @check_index_integrity
-def save_note() -> Union[Response, tuple[str, int]]:
+def save_note() -> Union[Response, Tuple[str, int]]:
 
     id_ = request.form.get('id', 0, int)
     text_ = request.form.get('big_text', "", str)
     starting_hash = request.form.get('starting_hash', "", str)
+
+    # telemetry = get_telemetry_info()
+    # telemetry['event']['note_timestamp'] = id_
+    # telemetry['event']['note_length'] = len(text_)
 
     r = Index.unlock_note(id_, cfg)
     if not r:
@@ -616,7 +735,8 @@ def save_note() -> Union[Response, tuple[str, int]]:
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'page_title': "Error: note {0} was not previously locked for edit.".format(id_),
             'message': "Error: note {0} was not previously locked for edit.<br /><br /><i>Lock file: {1}</i>".format(
-                id_, Index.get_lock_file_name(id_, cfg))
+                id_, Index.get_lock_file_name(id_, cfg)),
+            # 'telemetry': telemetry
         }
         return render_template("notes.html", **d), 403
 
@@ -629,7 +749,8 @@ def save_note() -> Union[Response, tuple[str, int]]:
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'page_title': "Error: note {0} has changed unexpectedly!",
             'message': "Error: note {0} has changed unexpectedly!<br /><br /><i>Starting hash: {1}<br />Current hash: {2}</i><br /><br />File not saved, since doing so would overwrite more recent changes.  To save your changes, copy the raw markdown below into another file and try again.<br /><br /><pre style=\"background-color: #cccccc\">{3}</pre>".format(
-                id_, starting_hash, current_hash, escape(text_))
+                id_, starting_hash, current_hash, escape(text_)),
+            # 'telemetry': telemetry
         }
         return render_template("notes.html", **d), 403
 
@@ -677,7 +798,7 @@ def new_note() -> Response:
 
 @app.route('/clone/<int:note_id>', methods=['GET'])
 @check_index_integrity
-def clone_note(note_id: int) -> Union[Response, tuple[str, int]]:
+def clone_note(note_id: int) -> Union[Response, Tuple[str, int]]:
     try:
         note, _ = Index.read_note_file(note_id, cfg)
     except FileNotFoundError:
@@ -696,7 +817,7 @@ def reindex() -> Response:
     return redirect("/", code=302)
 
 
-def export(list_of_notes: list[Note], search_str: str, filter_str: str) -> tuple[str, int]:
+def export(list_of_notes: List[Note], search_str: str, filter_str: str) -> Tuple[str, int]:
 
     dttm = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
     filename = 'notes_export_' + dttm + '.html'
@@ -741,14 +862,15 @@ def export(list_of_notes: list[Note], search_str: str, filter_str: str) -> tuple
     d = {
         'context': 'export',
         'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
-        'export_file_path': export_file_path, 'num_notes': num_notes
+        'export_file_path': export_file_path, 'num_notes': num_notes,
+        # 'telemetry': get_telemetry_info()
     }
     return render_template("notes.html", **d), 200
 
 
 @app.route('/project', methods=['GET'])
 @check_index_integrity
-def change_project() -> Union[Response, tuple[str, int]]:
+def change_project() -> Union[Response, Tuple[str, int]]:
     global cfg, idx
 
     project_name = request.args.get('project_name', None, str)
@@ -759,7 +881,8 @@ def change_project() -> Union[Response, tuple[str, int]]:
             'context': 'error',
             'active_project': cfg.get_active_project_name(), 'project_list': cfg.get_project_list(),
             'page_title': "Error: {0}".format(err_msg),
-            'message': "Error: {0}".format(err_msg)
+            'message': "Error: {0}".format(err_msg),
+            # 'telemetry': get_telemetry_info()
         }
         return render_template("notes.html", **d), 400
 
