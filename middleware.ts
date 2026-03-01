@@ -33,7 +33,7 @@ export async function middleware(request: NextRequest) {
 
   // Allow auth callback and login through unauthenticated
   if (
-    pathname.startsWith("/auth/callback") ||
+    pathname.startsWith("/auth/") ||
     pathname === "/login"
   ) {
     return supabaseResponse;
