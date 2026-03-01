@@ -34,7 +34,7 @@ const securityHeaders = [
       "frame-src 'none'",
       "frame-ancestors 'none'",
       "base-uri 'self'",
-      "form-action 'self'",
+      "form-action 'self' https://accounts.google.com",
       "object-src 'none'",
       "upgrade-insecure-requests",
     ].join("; "),
