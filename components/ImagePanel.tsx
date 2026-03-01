@@ -2,6 +2,8 @@
 
 import { useRef, useState } from "react";
 import type { NoteImage } from "@/lib/types";
+import { Upload, Copy, Trash2, ImageOff } from "lucide-react";
+import { Button } from "./ui/button";
 
 interface Props {
   noteId: number;
@@ -46,55 +48,71 @@ export default function ImagePanel({ noteId, images, signedUrls, onImagesChange 
   }
 
   return (
-    <div className="p-3">
-      <div className="font-semibold text-xs text-gray-600 uppercase mb-2">Images</div>
-      {error && <p className="text-red-500 text-xs mb-2">{error}</p>}
+    <div className="p-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Images</span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          className="h-7 text-xs gap-1"
+        >
+          <Upload className="h-3 w-3" />
+          {uploading ? "Uploading…" : "Upload PNG"}
+        </Button>
+      </div>
+
+      {error && <p className="text-destructive text-xs">{error}</p>}
+
       <div className="space-y-2">
         {images.map((img) => {
           const url = signedUrls[img.img_num];
           return (
-            <div key={img.img_num} className="flex items-center gap-2">
+            <div key={img.img_num} className="flex items-center gap-2 p-1.5 rounded-md border border-border/50 bg-muted/20">
               {url ? (
-                <a href={url} target="_blank" rel="noopener">
+                <a href={url} target="_blank" rel="noopener" className="shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={url}
                     alt={`Image ${img.img_num}`}
-                    className="w-10 h-10 object-cover rounded border"
+                    className="w-10 h-10 object-cover rounded border border-border"
                   />
                 </a>
               ) : (
-                <div className="w-10 h-10 rounded border bg-gray-100 flex items-center justify-center text-xs text-gray-400">
-                  {img.img_num}
+                <div className="w-10 h-10 rounded border border-border bg-muted flex items-center justify-center text-muted-foreground shrink-0">
+                  <ImageOff className="h-4 w-4" />
                 </div>
               )}
-              <button
+              <div className="flex-1 min-w-0">
+                <code className="text-xs text-muted-foreground">&lt;{img.img_num}&gt;</code>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
                 onClick={() => copyEmbed(img.img_num)}
-                className="text-xs text-gray-500 hover:text-gray-800"
                 title="Copy embed code"
               >
-                &lt;{img.img_num}&gt;
-              </button>
-              <button
+                <Copy className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
                 onClick={() => deleteImage(img.img_num)}
-                className="text-xs text-red-500 hover:text-red-700 ml-auto"
+                title="Delete image"
               >
-                ✕
-              </button>
+                <Trash2 className="h-3 w-3" />
+              </Button>
             </div>
           );
         })}
         {images.length === 0 && (
-          <p className="text-xs text-gray-400">No images attached.</p>
+          <p className="text-xs text-muted-foreground py-1">No images attached.</p>
         )}
       </div>
-      <button
-        onClick={() => inputRef.current?.click()}
-        disabled={uploading}
-        className="mt-2 text-xs border border-gray-300 rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-50"
-      >
-        {uploading ? "Uploading…" : "Upload PNG"}
-      </button>
+
       <input
         ref={inputRef}
         type="file"

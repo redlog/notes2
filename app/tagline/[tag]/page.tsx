@@ -5,6 +5,7 @@ import { getActiveProject, getUserProjects } from "@/lib/projects";
 import { getTaglines } from "@/lib/notes";
 import Header from "@/components/Header";
 import { renderMarkdown } from "@/lib/markdown";
+import { ArrowLeft } from "lucide-react";
 
 export default async function TaglinePage({
   params,
@@ -28,37 +29,45 @@ export default async function TaglinePage({
   const lines = await getTaglines(supabase, activeProject.id, decodedTag);
 
   return (
-    <>
+    <div className="min-h-screen bg-background">
       <Header
         projects={projects}
         activeProject={activeProject}
         userEmail={user.email ?? ""}
       />
-      <div className="max-w-3xl mx-auto px-4 py-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Link href="/" className="text-gray-400 hover:text-gray-700 text-sm">
-            ← Back
-          </Link>
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-5 transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to notes
+        </Link>
+
+        <div className="flex items-baseline gap-3 mb-6">
           <h1 className="text-xl font-bold">
-            Tagline: <span className="text-blue-700">#{decodedTag}</span>
+            Tagline:{" "}
+            <span className="text-blue-600">#{decodedTag}</span>
           </h1>
-          <span className="text-sm text-gray-500">({lines.length} lines)</span>
+          <span className="text-sm text-muted-foreground">{lines.length} lines</span>
         </div>
 
         {lines.length === 0 ? (
-          <p className="text-gray-400">No lines found for #{decodedTag}.</p>
+          <p className="text-muted-foreground text-sm py-8 text-center">
+            No lines found for #{decodedTag}.
+          </p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {lines.map((line, idx) => (
-              <div key={idx} className="border-b border-gray-100 pb-3">
-                <div className="flex items-baseline gap-2 mb-1">
+              <div key={idx} className="rounded-lg border border-border/60 bg-card p-4">
+                <div className="flex items-baseline gap-2 mb-2">
                   <Link
                     href={`/note/${line.noteId}`}
-                    className="text-sm font-medium text-blue-700 hover:underline"
+                    className="text-sm font-medium text-primary hover:underline"
                   >
                     {line.noteTitle}
                   </Link>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-muted-foreground">
                     {new Date(line.noteCreatedAt).toLocaleDateString(undefined, {
                       year: "numeric",
                       month: "short",
@@ -67,7 +76,7 @@ export default async function TaglinePage({
                   </span>
                 </div>
                 <div
-                  className="note-body text-sm"
+                  className="note-body text-sm text-foreground/90"
                   dangerouslySetInnerHTML={{
                     __html: renderMarkdown(line.line),
                   }}
@@ -77,6 +86,6 @@ export default async function TaglinePage({
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
