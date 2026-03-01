@@ -13,7 +13,7 @@ export default async function LoginPage() {
         <p className="text-gray-500 mb-8 text-sm">Personal Markdown notes, cloud-backed.</p>
         <form action="/auth/google" method="post">
           <button
-            formAction="/auth/google"
+            type="submit"
             className="w-full flex items-center justify-center gap-3 border border-gray-300 rounded-lg px-4 py-3 text-sm font-medium hover:bg-gray-50 transition"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
