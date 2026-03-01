@@ -3,6 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { TagCount, PersonCount } from "@/lib/types";
+import { Hash, Users, ArrowUpDown, Type, AlignLeft } from "lucide-react";
+import { Input } from "./ui/input";
+import { ScrollArea } from "./ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 interface Props {
   tags: TagCount[];
@@ -10,14 +14,12 @@ interface Props {
   projectId: string;
   currentSearch?: string;
   currentFilter?: string;
+  onNavigate?: () => void;
 }
 
 type SortMode = "count" | "name";
 
-function addFilterToken(
-  currentFilter: string,
-  token: string
-): string {
+function addFilterToken(currentFilter: string, token: string): string {
   const tokens = currentFilter
     .split(/[\s,]+/)
     .map((t) => t.trim())
@@ -32,6 +34,7 @@ export default function Sidebar({
   projectId,
   currentSearch = "",
   currentFilter = "",
+  onNavigate,
 }: Props) {
   const [tagSort, setTagSort] = useState<SortMode>("count");
   const [personSort, setPersonSort] = useState<SortMode>("count");
@@ -39,7 +42,7 @@ export default function Sidebar({
   const [personFilter, setPersonFilter] = useState("");
 
   const sortedTags = [...tags]
-    .filter((t) => t.tag.includes(tagFilter))
+    .filter((t) => t.tag.toLowerCase().includes(tagFilter.toLowerCase()))
     .sort(
       tagSort === "count"
         ? (a, b) => b.count - a.count
@@ -47,7 +50,7 @@ export default function Sidebar({
     );
 
   const sortedPeople = [...people]
-    .filter((p) => p.person.includes(personFilter))
+    .filter((p) => p.person.toLowerCase().includes(personFilter.toLowerCase()))
     .sort(
       personSort === "count"
         ? (a, b) => b.count - a.count
@@ -64,101 +67,148 @@ export default function Sidebar({
   }
 
   return (
-    <aside className="w-56 shrink-0 text-sm space-y-4">
-      {/* Tags */}
+    <div className="space-y-5 text-sm">
+      {/* Tags section */}
       <div>
-        <div className="flex items-center justify-between mb-1">
-          <span className="font-semibold text-gray-700">Tags</span>
-          <span className="text-xs text-gray-400 space-x-1">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5 font-semibold text-foreground text-xs uppercase tracking-wider">
+            <Hash className="h-3.5 w-3.5 text-blue-500" />
+            <span>Tags</span>
+            {tags.length > 0 && (
+              <span className="text-muted-foreground font-normal">({tags.length})</span>
+            )}
+          </div>
+          <div className="flex gap-0.5">
             <button
               onClick={() => setTagSort("count")}
-              className={tagSort === "count" ? "font-bold" : "hover:underline"}
+              title="Sort by count"
+              className={cn(
+                "p-1 rounded text-muted-foreground hover:text-foreground transition-colors",
+                tagSort === "count" && "text-primary bg-primary/10"
+              )}
             >
-              #
+              <ArrowUpDown className="h-3 w-3" />
             </button>
             <button
               onClick={() => setTagSort("name")}
-              className={tagSort === "name" ? "font-bold" : "hover:underline"}
+              title="Sort by name"
+              className={cn(
+                "p-1 rounded text-muted-foreground hover:text-foreground transition-colors",
+                tagSort === "name" && "text-primary bg-primary/10"
+              )}
             >
-              A
+              <Type className="h-3 w-3" />
             </button>
-          </span>
+          </div>
         </div>
-        <input
-          type="text"
-          placeholder="filter…"
-          value={tagFilter}
-          onChange={(e) => setTagFilter(e.target.value)}
-          className="w-full border border-gray-200 rounded px-2 py-0.5 text-xs mb-1"
-        />
-        <ul className="space-y-0.5 max-h-64 overflow-y-auto">
-          {sortedTags.map((t) => (
-            <li key={t.tag} className="flex items-center justify-between">
-              <Link
-                href={filterHref(`#${t.tag}`)}
-                className="text-blue-700 hover:underline truncate flex-1"
-              >
-                #{t.tag}
-              </Link>
-              <span className="text-gray-400 text-xs ml-1">{t.count}</span>
-              <Link
-                href={`/tagline/${encodeURIComponent(t.tag)}?project=${projectId}`}
-                className="text-gray-400 hover:text-gray-600 text-xs ml-1"
-                title="Tagline view"
-              >
-                TL
-              </Link>
-            </li>
-          ))}
-          {sortedTags.length === 0 && (
-            <li className="text-gray-400 text-xs">No tags</li>
-          )}
-        </ul>
+
+        {tags.length > 5 && (
+          <Input
+            type="text"
+            placeholder="Filter tags…"
+            value={tagFilter}
+            onChange={(e) => setTagFilter(e.target.value)}
+            className="h-7 text-xs mb-2"
+          />
+        )}
+
+        <ScrollArea className="max-h-52">
+          <ul className="space-y-0.5 pr-1">
+            {sortedTags.map((t) => (
+              <li key={t.tag} className="flex items-center justify-between group">
+                <Link
+                  href={filterHref(`#${t.tag}`)}
+                  onClick={onNavigate}
+                  className="flex-1 truncate text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded px-1.5 py-0.5 transition-colors"
+                >
+                  <span className="text-blue-400 mr-0.5">#</span>
+                  {t.tag}
+                </Link>
+                <div className="flex items-center gap-1 shrink-0 ml-1">
+                  <span className="text-muted-foreground text-xs tabular-nums">{t.count}</span>
+                  <Link
+                    href={`/tagline/${encodeURIComponent(t.tag)}?project=${projectId}`}
+                    onClick={onNavigate}
+                    title="Tagline view"
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all"
+                  >
+                    <AlignLeft className="h-3 w-3" />
+                  </Link>
+                </div>
+              </li>
+            ))}
+            {sortedTags.length === 0 && (
+              <li className="text-muted-foreground text-xs py-1 px-1.5">No tags yet</li>
+            )}
+          </ul>
+        </ScrollArea>
       </div>
 
-      {/* People */}
+      {/* People section */}
       <div>
-        <div className="flex items-center justify-between mb-1">
-          <span className="font-semibold text-gray-700">People</span>
-          <span className="text-xs text-gray-400 space-x-1">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5 font-semibold text-foreground text-xs uppercase tracking-wider">
+            <Users className="h-3.5 w-3.5 text-violet-500" />
+            <span>People</span>
+            {people.length > 0 && (
+              <span className="text-muted-foreground font-normal">({people.length})</span>
+            )}
+          </div>
+          <div className="flex gap-0.5">
             <button
               onClick={() => setPersonSort("count")}
-              className={personSort === "count" ? "font-bold" : "hover:underline"}
+              title="Sort by count"
+              className={cn(
+                "p-1 rounded text-muted-foreground hover:text-foreground transition-colors",
+                personSort === "count" && "text-primary bg-primary/10"
+              )}
             >
-              #
+              <ArrowUpDown className="h-3 w-3" />
             </button>
             <button
               onClick={() => setPersonSort("name")}
-              className={personSort === "name" ? "font-bold" : "hover:underline"}
+              title="Sort by name"
+              className={cn(
+                "p-1 rounded text-muted-foreground hover:text-foreground transition-colors",
+                personSort === "name" && "text-primary bg-primary/10"
+              )}
             >
-              A
+              <Type className="h-3 w-3" />
             </button>
-          </span>
+          </div>
         </div>
-        <input
-          type="text"
-          placeholder="filter…"
-          value={personFilter}
-          onChange={(e) => setPersonFilter(e.target.value)}
-          className="w-full border border-gray-200 rounded px-2 py-0.5 text-xs mb-1"
-        />
-        <ul className="space-y-0.5 max-h-64 overflow-y-auto">
-          {sortedPeople.map((p) => (
-            <li key={p.person} className="flex items-center justify-between">
-              <Link
-                href={filterHref(`@${p.person}`)}
-                className="text-purple-700 hover:underline truncate flex-1"
-              >
-                @{p.person}
-              </Link>
-              <span className="text-gray-400 text-xs ml-1">{p.count}</span>
-            </li>
-          ))}
-          {sortedPeople.length === 0 && (
-            <li className="text-gray-400 text-xs">No people</li>
-          )}
-        </ul>
+
+        {people.length > 5 && (
+          <Input
+            type="text"
+            placeholder="Filter people…"
+            value={personFilter}
+            onChange={(e) => setPersonFilter(e.target.value)}
+            className="h-7 text-xs mb-2"
+          />
+        )}
+
+        <ScrollArea className="max-h-52">
+          <ul className="space-y-0.5 pr-1">
+            {sortedPeople.map((p) => (
+              <li key={p.person} className="flex items-center justify-between">
+                <Link
+                  href={filterHref(`@${p.person}`)}
+                  onClick={onNavigate}
+                  className="flex-1 truncate text-violet-700 hover:text-violet-900 hover:bg-violet-50 rounded px-1.5 py-0.5 transition-colors"
+                >
+                  <span className="text-violet-400 mr-0.5">@</span>
+                  {p.person}
+                </Link>
+                <span className="text-muted-foreground text-xs tabular-nums ml-1 shrink-0">{p.count}</span>
+              </li>
+            ))}
+            {sortedPeople.length === 0 && (
+              <li className="text-muted-foreground text-xs py-1 px-1.5">No people yet</li>
+            )}
+          </ul>
+        </ScrollArea>
       </div>
-    </aside>
+    </div>
   );
 }

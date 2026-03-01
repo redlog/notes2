@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Project, UserSettings } from "@/lib/types";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Switch } from "./ui/switch";
+import { Separator } from "./ui/separator";
+import { Save, Plus, Trash2, Check } from "lucide-react";
 
 interface Props {
   projects: Project[];
@@ -77,150 +82,167 @@ export default function ConfigForm({ projects, activeProject, settings, userEmai
   return (
     <div className="space-y-8">
       {/* Account */}
-      <section>
-        <h2 className="font-semibold text-gray-700 mb-3 border-b pb-1">Account</h2>
-        <p className="text-sm text-gray-600">Signed in as <strong>{userEmail}</strong></p>
-      </section>
-
-      {/* Active project settings */}
-      <section>
-        <h2 className="font-semibold text-gray-700 mb-3 border-b pb-1">
-          Project: {activeProject.name}
-        </h2>
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm font-medium text-gray-700">Project name</label>
-            <input
-              type="text"
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              className="mt-1 block w-full border border-gray-300 rounded px-3 py-1.5 text-sm"
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={trigramSearch}
-              onChange={(e) => setTrigramSearch(e.target.checked)}
-              className="rounded"
-            />
-            Enable trigram (partial-word) search
-          </label>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-foreground">Account</h2>
+        <Separator />
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3">
+          <p className="text-sm text-muted-foreground">Signed in as</p>
+          <p className="text-sm font-medium">{userEmail}</p>
         </div>
       </section>
 
-      {/* User settings */}
-      <section>
-        <h2 className="font-semibold text-gray-700 mb-3 border-b pb-1">User preferences</h2>
-        <div className="space-y-3">
-          <div>
-            <label className="text-sm font-medium text-gray-700">Notes per page</label>
-            <input
+      {/* Active project settings */}
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Project settings</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{activeProject.name}</p>
+        </div>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Project name</label>
+            <Input
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+
+          <div className="flex items-center justify-between max-w-sm">
+            <div>
+              <p className="text-sm font-medium">Trigram search</p>
+              <p className="text-xs text-muted-foreground">Enables partial-word matching</p>
+            </div>
+            <Switch
+              checked={trigramSearch}
+              onCheckedChange={setTrigramSearch}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* User preferences */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-foreground">Preferences</h2>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Notes per page</label>
+            <Input
               type="number"
               min={5}
               max={200}
               value={notesPerPage}
               onChange={(e) => setNotesPerPage(Number(e.target.value))}
-              className="mt-1 block w-32 border border-gray-300 rounded px-3 py-1.5 text-sm"
+              className="w-28"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={autosaveEnabled}
-              onChange={(e) => setAutosaveEnabled(e.target.checked)}
-              className="rounded"
-            />
-            Enable autosave
-          </label>
-          {autosaveEnabled && (
+
+          <div className="flex items-center justify-between max-w-sm">
             <div>
-              <label className="text-sm font-medium text-gray-700">Autosave interval (seconds, min 15)</label>
-              <input
+              <p className="text-sm font-medium">Autosave</p>
+              <p className="text-xs text-muted-foreground">Automatically save while editing</p>
+            </div>
+            <Switch
+              checked={autosaveEnabled}
+              onCheckedChange={setAutosaveEnabled}
+            />
+          </div>
+
+          {autosaveEnabled && (
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Autosave interval (seconds)</label>
+              <Input
                 type="number"
                 min={15}
                 max={300}
                 value={autosaveInterval}
                 onChange={(e) => setAutosaveInterval(Number(e.target.value))}
-                className="mt-1 block w-32 border border-gray-300 rounded px-3 py-1.5 text-sm"
+                className="w-28"
               />
+              <p className="text-xs text-muted-foreground">Minimum 15 seconds</p>
             </div>
           )}
         </div>
       </section>
 
+      {/* Save button */}
       <div className="flex items-center gap-3">
-        <button
-          onClick={saveSettings}
-          disabled={saving}
-          className="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-        >
+        <Button onClick={saveSettings} disabled={saving} className="gap-1.5">
+          <Save className="h-4 w-4" />
           {saving ? "Saving…" : "Save settings"}
-        </button>
-        {msg && <span className="text-sm text-gray-500">{msg}</span>}
+        </Button>
+        {msg && (
+          <span className="text-sm text-muted-foreground flex items-center gap-1">
+            <Check className="h-3.5 w-3.5 text-green-600" />
+            {msg}
+          </span>
+        )}
       </div>
 
-      {/* Create project */}
-      <section>
-        <h2 className="font-semibold text-gray-700 mb-3 border-b pb-1">Projects</h2>
-        <ul className="text-sm mb-3 space-y-1">
+      {/* Projects */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-foreground">Projects</h2>
+        <Separator />
+        <ul className="space-y-1">
           {projects.map((p) => (
-            <li key={p.id} className={p.id === activeProject.id ? "font-semibold" : "text-gray-600"}>
+            <li
+              key={p.id}
+              className={`text-sm px-3 py-1.5 rounded-md ${
+                p.id === activeProject.id
+                  ? "bg-primary/10 text-primary font-medium"
+                  : "text-muted-foreground"
+              }`}
+            >
               {p.name}
             </li>
           ))}
         </ul>
-        <div className="flex gap-2">
-          <input
-            type="text"
+        <div className="flex gap-2 max-w-sm">
+          <Input
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
             placeholder="New project name…"
-            className="border border-gray-300 rounded px-2 py-1 text-sm"
             onKeyDown={(e) => e.key === "Enter" && createProject()}
           />
-          <button
-            onClick={createProject}
-            className="px-3 py-1 border border-gray-300 rounded text-sm hover:bg-gray-50"
-          >
+          <Button variant="outline" onClick={createProject} className="gap-1.5 shrink-0">
+            <Plus className="h-4 w-4" />
             Create
-          </button>
+          </Button>
         </div>
       </section>
 
       {/* Delete project */}
       {projects.length > 1 && (
-        <section>
-          <h2 className="font-semibold text-red-700 mb-3 border-b border-red-200 pb-1">
-            Delete project
-          </h2>
-          <p className="text-sm text-gray-600 mb-3">
+        <section className="space-y-4">
+          <h2 className="text-sm font-semibold text-destructive">Delete project</h2>
+          <Separator className="bg-destructive/20" />
+          <p className="text-sm text-muted-foreground">
             Permanently deletes <strong>{activeProject.name}</strong> and all its notes and images.
+            This cannot be undone.
           </p>
-          <div className="flex gap-2 items-center">
-            <input
-              type="text"
+          <div className="flex gap-2 items-center max-w-sm">
+            <Input
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
-              placeholder="Type delete to confirm"
-              className="border border-red-300 rounded px-2 py-1 text-sm"
+              placeholder='Type "delete" to confirm'
+              className="border-destructive/40 focus-visible:ring-destructive/40"
             />
-            <button
+            <Button
+              variant="destructive"
               onClick={deleteProject}
               disabled={deleteConfirm !== "delete"}
-              className="px-3 py-1 bg-red-600 text-white rounded text-sm disabled:opacity-40 hover:bg-red-700"
+              className="gap-1.5 shrink-0"
             >
-              Delete project
-            </button>
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
           </div>
         </section>
       )}
 
       {/* App info */}
-      <section>
-        <h2 className="font-semibold text-gray-700 mb-2 border-b pb-1">App</h2>
-        <p className="text-xs text-gray-400">Localnotes v2</p>
-      </section>
+      <p className="text-xs text-muted-foreground pt-2">Localnotes v2</p>
     </div>
   );
 }

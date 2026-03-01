@@ -2,6 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Trash2 } from "lucide-react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "./ui/dialog";
 
 interface Props {
   noteId: number;
@@ -26,42 +38,46 @@ export default function DeleteButton({ noteId }: Props) {
     }
   }
 
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="px-3 py-1 border border-red-300 text-red-600 rounded text-sm hover:bg-red-50"
-      >
-        Delete
-      </button>
-    );
+  function handleOpenChange(val: boolean) {
+    setOpen(val);
+    if (!val) setConfirm("");
   }
 
   return (
-    <div className="border border-red-300 rounded p-3 space-y-2 bg-red-50">
-      <p className="text-sm text-red-700">Type <strong>delete</strong> to confirm:</p>
-      <input
-        type="text"
-        value={confirm}
-        onChange={(e) => setConfirm(e.target.value)}
-        className="border border-red-300 rounded px-2 py-1 text-sm w-full"
-        autoFocus
-      />
-      <div className="flex gap-2">
-        <button
-          onClick={handleDelete}
-          disabled={confirm !== "delete" || loading}
-          className="px-3 py-1 bg-red-600 text-white rounded text-sm disabled:opacity-40 hover:bg-red-700"
-        >
-          {loading ? "Deleting…" : "Confirm Delete"}
-        </button>
-        <button
-          onClick={() => { setOpen(false); setConfirm(""); }}
-          className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="text-destructive border-destructive/30 hover:bg-destructive/5 hover:text-destructive gap-1.5">
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete note</DialogTitle>
+          <DialogDescription>
+            This action is permanent and cannot be undone. Type <strong>delete</strong> to confirm.
+          </DialogDescription>
+        </DialogHeader>
+        <Input
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder="Type delete to confirm"
+          autoFocus
+          onKeyDown={(e) => e.key === "Enter" && handleDelete()}
+        />
+        <DialogFooter>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={confirm !== "delete" || loading}
+          >
+            {loading ? "Deleting…" : "Delete note"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Badge } from "./ui/badge";
 
 interface Props {
   tag: string;
@@ -20,7 +21,6 @@ export default function TagPill({
   const prefix = variant === "tag" ? "#" : "@";
   const token = `${prefix}${tag}`;
 
-  // Build URL that adds this tag/person to the filter
   const params = new URLSearchParams();
   if (currentProject) params.set("project", currentProject);
   if (currentSearch) params.set("search", currentSearch);
@@ -35,21 +35,15 @@ export default function TagPill({
     params.set("filter", currentFilter);
   }
 
-  const color =
-    variant === "tag"
-      ? isHeader
-        ? "bg-blue-100 text-blue-800"
-        : "bg-blue-50 text-blue-600"
-      : isHeader
-      ? "bg-purple-100 text-purple-800"
-      : "bg-purple-50 text-purple-600";
+  const badgeVariant = variant === "tag"
+    ? (isHeader ? "tag" : "tag-mention")
+    : (isHeader ? "person" : "person-mention");
 
   return (
-    <Link
-      href={`/?${params.toString()}`}
-      className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${color} hover:opacity-80 transition`}
-    >
-      {token}
+    <Link href={`/?${params.toString()}`}>
+      <Badge variant={badgeVariant} className="cursor-pointer">
+        {token}
+      </Badge>
     </Link>
   );
 }

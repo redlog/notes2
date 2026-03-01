@@ -2,6 +2,40 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
 /* Note body rendered HTML */
 .note-body h1 { @apply text-2xl font-bold mt-4 mb-2; }
 .note-body h2 { @apply text-xl font-bold mt-3 mb-2; }
@@ -10,17 +44,16 @@
 .note-body ul { @apply list-disc list-inside mb-3 space-y-1; }
 .note-body ol { @apply list-decimal list-inside mb-3 space-y-1; }
 .note-body li ul, .note-body li ol { @apply ml-5 mt-1; }
-.note-body blockquote { @apply border-l-4 border-gray-300 pl-4 italic text-gray-600 my-3; }
-.note-body code { @apply bg-gray-100 px-1 rounded text-sm font-mono; }
-.note-body pre { @apply bg-gray-100 p-3 rounded overflow-x-auto mb-3; }
+.note-body blockquote { @apply border-l-4 border-slate-300 pl-4 italic text-slate-600 my-3; }
+.note-body code { @apply bg-slate-100 px-1.5 py-0.5 rounded text-sm font-mono text-slate-800; }
+.note-body pre { @apply bg-slate-100 p-4 rounded-lg overflow-x-auto mb-3; }
 .note-body pre code { @apply bg-transparent p-0; }
 .note-body table { @apply w-full border-collapse mb-3 text-sm; }
-.note-body th { @apply border border-gray-300 px-2 py-1 bg-gray-50 font-semibold text-left; }
-.note-body td { @apply border border-gray-300 px-2 py-1; }
-.note-body hr { @apply border-gray-300 my-4; }
-.note-body a { @apply text-blue-600 underline; }
-.note-img { @apply max-w-full rounded shadow my-2; }
-.note-ref { @apply text-blue-600 underline; }
-/* <del class="note-ref-missing"> for broken note:ID links */
+.note-body th { @apply border border-slate-200 px-3 py-2 bg-slate-50 font-semibold text-left; }
+.note-body td { @apply border border-slate-200 px-3 py-2; }
+.note-body hr { @apply border-slate-200 my-6; }
+.note-body a { @apply text-blue-600 underline underline-offset-2 hover:text-blue-800; }
+.note-img { @apply max-w-full rounded-lg shadow-sm my-3; }
+.note-ref { @apply text-blue-600 underline underline-offset-2; }
 del.note-ref-missing { @apply text-red-400 no-underline; text-decoration: line-through; }
-.img-missing { @apply text-gray-400 italic; }
+.img-missing { @apply text-slate-400 italic; }
