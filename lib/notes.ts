@@ -182,7 +182,7 @@ export async function getNote(
   const { data, error } = await supabase
     .from("notes")
     .select(
-      `*, note_tags(tag, is_header), note_people(person, is_header), note_images(img_num, storage_path)`
+      `*, tags:note_tags(tag, is_header), people:note_people(person, is_header), images:note_images(img_num, storage_path)`
     )
     .eq("id", noteId)
     .single();
