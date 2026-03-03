@@ -7,6 +7,7 @@ import { renderMarkdown } from "@/lib/markdown";
 import Header from "@/components/Header";
 import TagPill from "@/components/TagPill";
 import DeleteButton from "@/components/DeleteButton";
+import MoveNoteButton from "@/components/MoveNoteButton";
 import { Button } from "@/components/ui/button";
 import { Pencil, Copy, ArrowLeft, Clock, Calendar, Link2 } from "lucide-react";
 
@@ -121,6 +122,7 @@ export default async function ReadNotePage({
                     Clone
                   </Link>
                 </Button>
+                <MoveNoteButton noteId={note.id} currentProjectId={note.project_id} projects={projects} />
                 <DeleteButton noteId={note.id} />
               </div>
 
