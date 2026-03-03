@@ -60,6 +60,55 @@ export async function PUT(
   return NextResponse.json(result);
 }
 
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const noteId = Number(id);
+  if (!Number.isInteger(noteId) || noteId <= 0) {
+    return NextResponse.json({ error: "Invalid note ID" }, { status: 400 });
+  }
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { project_id } = await request.json();
+  if (typeof project_id !== "string" || !project_id) {
+    return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
+  }
+
+  // Check note ownership
+  const { data: note } = await supabase
+    .from("notes")
+    .select("user_id")
+    .eq("id", noteId)
+    .single();
+  if (!note || note.user_id !== user.id) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Check target project belongs to user
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", project_id)
+    .eq("user_id", user.id)
+    .single();
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+
+  const { error } = await supabase
+    .from("notes")
+    .update({ project_id })
+    .eq("id", noteId);
+  if (error) return NextResponse.json({ error: "Update failed" }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}
+
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
