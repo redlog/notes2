@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
-import { getNote, getSignedImageUrls } from "@/lib/notes";
+import { getNote, getSignedImageUrls, extractMentions } from "@/lib/notes";
 import { renderMarkdown } from "@/lib/markdown";
 import Header from "@/components/Header";
 import TagPill from "@/components/TagPill";
@@ -72,9 +72,12 @@ export default async function ReadNotePage({
   }
 
   const headerTags = note.tags.filter((t) => t.is_header);
-  const mentionTags = note.tags.filter((t) => !t.is_header);
   const headerPeople = note.people.filter((p) => p.is_header);
-  const mentionPeople = note.people.filter((p) => !p.is_header);
+  const headerTagNames = new Set(headerTags.map((t) => t.tag));
+  const headerPeopleNames = new Set(headerPeople.map((p) => p.person));
+  const { tags: bodyTagNames, people: bodyPeopleNames } = extractMentions(note.body);
+  const mentionTags = bodyTagNames.filter((t) => !headerTagNames.has(t)).map((t) => ({ tag: t }));
+  const mentionPeople = bodyPeopleNames.filter((p) => !headerPeopleNames.has(p)).map((p) => ({ person: p }));
 
   void settings;
 
