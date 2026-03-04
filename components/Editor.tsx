@@ -311,7 +311,7 @@ export default function Editor({
     const list = mentionState.type === "tag" ? allTags : allPeople;
     const q = mentionState.query.toLowerCase();
     const filtered = q ? list.filter((t) => t.toLowerCase().includes(q)) : list;
-    return filtered.slice(0, 8);
+    return filtered.slice(0, 100);
   }, [mentionState, allTags, allPeople]);
 
   const metaPanel = (
