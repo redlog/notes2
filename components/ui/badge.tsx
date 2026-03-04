@@ -12,9 +12,9 @@ const badgeVariants = cva(
         destructive: "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
         tag: "border-transparent bg-blue-100 text-blue-800 hover:bg-blue-200",
-        "tag-mention": "border-transparent bg-blue-50 text-blue-600 hover:bg-blue-100",
+        "tag-mention": "border-dashed border-blue-200 bg-blue-50/60 text-blue-600 hover:bg-blue-100",
         person: "border-transparent bg-violet-100 text-violet-800 hover:bg-violet-200",
-        "person-mention": "border-transparent bg-violet-50 text-violet-600 hover:bg-violet-100",
+        "person-mention": "border-dashed border-violet-200 bg-violet-50/60 text-violet-600 hover:bg-violet-100",
       },
     },
     defaultVariants: {
