@@ -464,8 +464,9 @@ export async function getTaglines(
   supabase: SupabaseClient,
   projectId: string,
   tag: string,
-  limit = 25
-): Promise<{ noteId: number; noteTitle: string; noteCreatedAt: string; line: string }[]> {
+  page = 1,
+  pageSize = 25
+): Promise<{ lines: { noteId: number; noteTitle: string; noteCreatedAt: string; line: string }[]; total: number }> {
   // Find all notes in project that mention this tag
   const { data: tagData, error } = await supabase
     .from("note_tags")
@@ -473,27 +474,27 @@ export async function getTaglines(
     .eq("notes.project_id", projectId)
     .eq("tag", tag);
 
-  if (error || !tagData) return [];
+  if (error || !tagData) return { lines: [], total: 0 };
 
-  const results: { noteId: number; noteTitle: string; noteCreatedAt: string; line: string }[] = [];
+  type NoteRow = { note_id: number; notes: { id: number; title: string; body: string; created_at: string } };
+  const sorted = ([...tagData] as unknown as NoteRow[]).sort(
+    (a, b) => new Date(b.notes.created_at).getTime() - new Date(a.notes.created_at).getTime()
+  );
+
+  const all: { noteId: number; noteTitle: string; noteCreatedAt: string; line: string }[] = [];
   const tagPattern = new RegExp(`#${tag}\\b`, "i");
 
-  for (const row of (tagData as unknown) as Array<{ note_id: number; notes: { id: number; title: string; body: string; created_at: string } }>) {
+  for (const row of sorted) {
     const note = row.notes;
-    const lines = note.body.split("\n");
-    for (const line of lines) {
+    for (const line of note.body.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("<!--")) continue;
       if (tagPattern.test(trimmed)) {
-        results.push({
-          noteId: note.id,
-          noteTitle: note.title,
-          noteCreatedAt: note.created_at,
-          line: trimmed,
-        });
-        if (results.length >= limit) return results;
+        all.push({ noteId: note.id, noteTitle: note.title, noteCreatedAt: note.created_at, line: trimmed });
       }
     }
   }
-  return results;
+
+  const offset = (page - 1) * pageSize;
+  return { lines: all.slice(offset, offset + pageSize), total: all.length };
 }
