@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
-import { listNotes, getTagCounts, getPersonCounts } from "@/lib/notes";
+import { listNotes, getTagCounts, getPersonCounts, getEarliestNoteDate } from "@/lib/notes";
 import AppShell from "@/components/AppShell";
 import NoteRow from "@/components/NoteRow";
 import { Input } from "@/components/ui/input";
@@ -50,7 +50,7 @@ export default async function HomePage({
   const timeMin = sp.time_min;
   const timeMax = sp.time_max;
 
-  const [listResult, tagCounts, peopleCounts] = await Promise.all([
+  const [listResult, tagCounts, peopleCounts, earliestDate] = await Promise.all([
     listNotes(supabase, {
       projectId: activeProject.id,
       search,
@@ -64,7 +64,12 @@ export default async function HomePage({
     }),
     getTagCounts(supabase, activeProject.id),
     getPersonCounts(supabase, activeProject.id),
+    getEarliestNoteDate(supabase, activeProject.id),
   ]);
+
+  const today = new Date().toISOString().split("T")[0];
+  const defaultMin = timeMin ?? earliestDate ?? "";
+  const defaultMax = timeMax ?? today;
 
   const { notes, total } = listResult;
   const totalPages = Math.ceil(total / perPage);
@@ -138,19 +143,21 @@ export default async function HomePage({
               placeholder="Filter: #tag @person ~#exclude +#exclusive"
               className="flex-1 min-w-48 text-sm"
             />
-            <div className="flex items-center gap-1 text-muted-foreground text-xs shrink-0">
+            <div className="flex items-center gap-1 text-muted-foreground shrink-0">
               <input
+                key={defaultMin}
                 type="date"
                 name="time_min"
-                defaultValue={timeMin}
-                className="h-9 border border-input rounded-md px-2 text-xs bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                defaultValue={defaultMin}
+                className="h-9 min-w-[8rem] border border-input rounded-md px-2 text-sm bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
               <span>–</span>
               <input
+                key={defaultMax}
                 type="date"
                 name="time_max"
-                defaultValue={timeMax}
-                className="h-9 border border-input rounded-md px-2 text-xs bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                defaultValue={defaultMax}
+                className="h-9 min-w-[8rem] border border-input rounded-md px-2 text-sm bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
             </div>
           </div>
