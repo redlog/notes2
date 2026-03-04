@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { TagCount, PersonCount } from "@/lib/types";
-import { Hash, Users, ArrowUpDown, Type, AlignLeft } from "lucide-react";
+import { Hash, Users, AlignLeft, ArrowUp, ArrowDown, ArrowUpDown, Type } from "lucide-react";
 import { Input } from "./ui/input";
 import { ScrollArea } from "./ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,27 @@ interface Props {
   onNavigate?: () => void;
 }
 
-type SortMode = "count" | "name";
+type SortKey = "count" | "name";
+type SortDir = "asc" | "desc";
+type SortMode = `${SortKey}-${SortDir}`;
+
+const DEFAULT_DIR: Record<SortKey, SortDir> = { count: "desc", name: "asc" };
+
+function toggleSort(current: SortMode, key: SortKey): SortMode {
+  const [currentKey, currentDir] = current.split("-") as [SortKey, SortDir];
+  if (currentKey === key) {
+    return `${key}-${currentDir === "asc" ? "desc" : "asc"}`;
+  }
+  return `${key}-${DEFAULT_DIR[key]}`;
+}
+
+function DirIcon({ mode, sortKey }: { mode: SortMode; sortKey: SortKey }) {
+  const [key, dir] = mode.split("-") as [SortKey, SortDir];
+  if (key !== sortKey) return sortKey === "count" ? <ArrowUpDown className="h-3 w-3" /> : <Type className="h-3 w-3" />;
+  return dir === "asc"
+    ? <ArrowUp className="h-3 w-3" />
+    : <ArrowDown className="h-3 w-3" />;
+}
 
 function addFilterToken(currentFilter: string, token: string): string {
   const tokens = currentFilter
@@ -34,26 +54,31 @@ export default function Sidebar({
   currentFilter = "",
   onNavigate,
 }: Props) {
-  const [tagSort, setTagSort] = useState<SortMode>("count");
-  const [personSort, setPersonSort] = useState<SortMode>("count");
+  const [tagSort, setTagSort] = useState<SortMode>("count-desc");
+  const [personSort, setPersonSort] = useState<SortMode>("count-desc");
   const [tagFilter, setTagFilter] = useState("");
   const [personFilter, setPersonFilter] = useState("");
 
+  const [tagSortKey, tagSortDir] = tagSort.split("-") as [SortKey, SortDir];
+  const [personSortKey, personSortDir] = personSort.split("-") as [SortKey, SortDir];
+
   const sortedTags = [...tags]
     .filter((t) => t.tag.toLowerCase().includes(tagFilter.toLowerCase()))
-    .sort(
-      tagSort === "count"
-        ? (a, b) => b.count - a.count
-        : (a, b) => a.tag.localeCompare(b.tag)
-    );
+    .sort((a, b) => {
+      const cmp =
+        tagSortKey === "count" ? a.count - b.count : a.tag.localeCompare(b.tag);
+      return tagSortDir === "asc" ? cmp : -cmp;
+    });
 
   const sortedPeople = [...people]
     .filter((p) => p.person.toLowerCase().includes(personFilter.toLowerCase()))
-    .sort(
-      personSort === "count"
-        ? (a, b) => b.count - a.count
-        : (a, b) => a.person.localeCompare(b.person)
-    );
+    .sort((a, b) => {
+      const cmp =
+        personSortKey === "count"
+          ? a.count - b.count
+          : a.person.localeCompare(b.person);
+      return personSortDir === "asc" ? cmp : -cmp;
+    });
 
   function filterHref(token: string) {
     const params = new URLSearchParams();
@@ -77,24 +102,24 @@ export default function Sidebar({
           </div>
           <div className="flex gap-0.5">
             <button
-              onClick={() => setTagSort("count")}
-              title="Sort by count"
+              onClick={() => setTagSort((s) => toggleSort(s, "count"))}
+              title={`Sort by count (${tagSortKey === "count" ? (tagSortDir === "asc" ? "ascending" : "descending") : "click to switch"})`}
               className={cn(
                 "p-1 rounded text-muted-foreground hover:text-foreground transition-colors",
-                tagSort === "count" && "text-primary bg-primary/10"
+                tagSortKey === "count" && "text-primary bg-primary/10"
               )}
             >
-              <ArrowUpDown className="h-3 w-3" />
+              <DirIcon mode={tagSort} sortKey="count" />
             </button>
             <button
-              onClick={() => setTagSort("name")}
-              title="Sort by name"
+              onClick={() => setTagSort((s) => toggleSort(s, "name"))}
+              title={`Sort by name (${tagSortKey === "name" ? (tagSortDir === "asc" ? "A→Z" : "Z→A") : "click to switch"})`}
               className={cn(
                 "p-1 rounded text-muted-foreground hover:text-foreground transition-colors",
-                tagSort === "name" && "text-primary bg-primary/10"
+                tagSortKey === "name" && "text-primary bg-primary/10"
               )}
             >
-              <Type className="h-3 w-3" />
+              <DirIcon mode={tagSort} sortKey="name" />
             </button>
           </div>
         </div>
@@ -109,7 +134,7 @@ export default function Sidebar({
           />
         )}
 
-        <ScrollArea className="max-h-52">
+        <ScrollArea className="max-h-72">
           <ul className="space-y-0.5 pr-1">
             {sortedTags.map((t) => (
               <li key={t.tag} className="flex items-center justify-between group">
@@ -153,24 +178,24 @@ export default function Sidebar({
           </div>
           <div className="flex gap-0.5">
             <button
-              onClick={() => setPersonSort("count")}
-              title="Sort by count"
+              onClick={() => setPersonSort((s) => toggleSort(s, "count"))}
+              title={`Sort by count (${personSortKey === "count" ? (personSortDir === "asc" ? "ascending" : "descending") : "click to switch"})`}
               className={cn(
                 "p-1 rounded text-muted-foreground hover:text-foreground transition-colors",
-                personSort === "count" && "text-primary bg-primary/10"
+                personSortKey === "count" && "text-primary bg-primary/10"
               )}
             >
-              <ArrowUpDown className="h-3 w-3" />
+              <DirIcon mode={personSort} sortKey="count" />
             </button>
             <button
-              onClick={() => setPersonSort("name")}
-              title="Sort by name"
+              onClick={() => setPersonSort((s) => toggleSort(s, "name"))}
+              title={`Sort by name (${personSortKey === "name" ? (personSortDir === "asc" ? "A→Z" : "Z→A") : "click to switch"})`}
               className={cn(
                 "p-1 rounded text-muted-foreground hover:text-foreground transition-colors",
-                personSort === "name" && "text-primary bg-primary/10"
+                personSortKey === "name" && "text-primary bg-primary/10"
               )}
             >
-              <Type className="h-3 w-3" />
+              <DirIcon mode={personSort} sortKey="name" />
             </button>
           </div>
         </div>
@@ -185,7 +210,7 @@ export default function Sidebar({
           />
         )}
 
-        <ScrollArea className="max-h-52">
+        <ScrollArea className="max-h-72">
           <ul className="space-y-0.5 pr-1">
             {sortedPeople.map((p) => (
               <li key={p.person} className="flex items-center justify-between">
