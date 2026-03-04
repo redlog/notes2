@@ -102,6 +102,9 @@ export default async function ReadNotePage({
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Note body */}
           <article className="flex-1 min-w-0 order-2 lg:order-1">
+            {note.title && (
+              <h1 className="text-2xl font-bold text-foreground mb-4">{note.title}</h1>
+            )}
             <div
               className="note-body prose max-w-none text-foreground"
               dangerouslySetInnerHTML={{ __html: html }}
