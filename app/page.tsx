@@ -177,7 +177,7 @@ export default async function HomePage({
               <Link
                 key={sk}
                 href={buildUrl({ sk, pg: "1" })}
-                className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                className={`px-2 py-1.5 lg:py-0.5 rounded text-xs transition-colors ${
                   sortKey === sk
                     ? "bg-primary text-primary-foreground font-medium"
                     : "hover:bg-muted"
@@ -188,7 +188,7 @@ export default async function HomePage({
             ))}
             <Link
               href={buildUrl({ so: sortOrder === "asc" ? "desc" : "asc", pg: "1" })}
-              className="px-2 py-0.5 rounded text-xs hover:bg-muted transition-colors ml-1"
+              className="px-2 py-1.5 lg:py-0.5 rounded text-xs hover:bg-muted transition-colors ml-1"
             >
               {sortOrder === "asc" ? "↑" : "↓"}
             </Link>

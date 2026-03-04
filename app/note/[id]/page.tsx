@@ -110,13 +110,13 @@ export default async function ReadNotePage({
             <div className="lg:sticky lg:top-20 space-y-5">
               {/* Actions */}
               <div className="flex flex-wrap gap-2">
-                <Button asChild size="sm" className="gap-1.5">
+                <Button asChild className="gap-1.5">
                   <Link href={`/edit/${note.id}`}>
                     <Pencil className="h-3.5 w-3.5" />
                     Edit
                   </Link>
                 </Button>
-                <Button asChild variant="outline" size="sm" className="gap-1.5">
+                <Button asChild variant="outline" className="gap-1.5">
                   <Link href={`/clone/${note.id}`}>
                     <Copy className="h-3.5 w-3.5" />
                     Clone

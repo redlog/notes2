@@ -141,7 +141,7 @@ export default function Sidebar({
                 <Link
                   href={filterHref(`#${t.tag}`)}
                   onClick={onNavigate}
-                  className="flex-1 truncate text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded px-1.5 py-0.5 transition-colors"
+                  className="flex-1 truncate text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded px-1.5 py-2 lg:py-0.5 transition-colors"
                 >
                   <span className="text-blue-400 mr-0.5">#</span>
                   {t.tag}
@@ -217,7 +217,7 @@ export default function Sidebar({
                 <Link
                   href={filterHref(`@${p.person}`)}
                   onClick={onNavigate}
-                  className="flex-1 truncate text-violet-700 hover:text-violet-900 hover:bg-violet-50 rounded px-1.5 py-0.5 transition-colors"
+                  className="flex-1 truncate text-violet-700 hover:text-violet-900 hover:bg-violet-50 rounded px-1.5 py-2 lg:py-0.5 transition-colors"
                 >
                   <span className="text-violet-400 mr-0.5">@</span>
                   {p.person}
