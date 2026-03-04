@@ -144,10 +144,10 @@ export default async function ReadNotePage({
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Tags</p>
                   <div className="flex flex-wrap gap-1.5">
                     {headerTags.map((t) => (
-                      <TagPill key={t.tag} tag={t.tag} isHeader currentProject={activeProject?.id} variant="tag" />
+                      <TagPill key={t.tag} tag={t.tag} isHeader variant="tag" />
                     ))}
                     {mentionTags.map((t) => (
-                      <TagPill key={t.tag} tag={t.tag} isHeader={false} currentProject={activeProject?.id} variant="tag" />
+                      <TagPill key={t.tag} tag={t.tag} isHeader={false} variant="tag" />
                     ))}
                   </div>
                 </div>
@@ -159,10 +159,10 @@ export default async function ReadNotePage({
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">People</p>
                   <div className="flex flex-wrap gap-1.5">
                     {headerPeople.map((p) => (
-                      <TagPill key={p.person} tag={p.person} isHeader currentProject={activeProject?.id} variant="person" />
+                      <TagPill key={p.person} tag={p.person} isHeader variant="person" />
                     ))}
                     {mentionPeople.map((p) => (
-                      <TagPill key={p.person} tag={p.person} isHeader={false} currentProject={activeProject?.id} variant="person" />
+                      <TagPill key={p.person} tag={p.person} isHeader={false} variant="person" />
                     ))}
                   </div>
                 </div>
