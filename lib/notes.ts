@@ -197,12 +197,11 @@ export async function createNote(
   supabase: SupabaseClient,
   projectId: string,
   userId: string,
+  title = "",
   body = "",
   tags: string[] = [],
   people: string[] = []
 ): Promise<number> {
-  const title = extractTitle(body);
-
   const { data, error } = await supabase
     .from("notes")
     .insert({ project_id: projectId, user_id: userId, title, body })
@@ -220,6 +219,7 @@ export async function createNote(
 export async function saveNote(
   supabase: SupabaseClient,
   noteId: number,
+  title: string,
   body: string,
   tags: string[],
   people: string[],
@@ -236,8 +236,6 @@ export async function saveNote(
   if (current.version !== expectedVersion) {
     return { ok: false, conflict: true, currentBody: current.body };
   }
-
-  const title = extractTitle(body);
   const newVersion = expectedVersion + 1;
 
   const { data: updated, error: updateErr } = await supabase

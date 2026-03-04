@@ -32,9 +32,12 @@ export async function PUT(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { body, tags, people, version } = await request.json();
+  const { title, body, tags, people, version } = await request.json();
 
   // Input validation
+  if (typeof title !== "string" || title.length > 500) {
+    return NextResponse.json({ error: "Invalid title" }, { status: 400 });
+  }
   if (typeof body !== "string" || body.length > MAX_BODY_BYTES) {
     return NextResponse.json({ error: "Note body too large or invalid" }, { status: 400 });
   }
@@ -57,7 +60,7 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid version" }, { status: 400 });
   }
 
-  const result = await saveNote(supabase, noteId, body, tags, people, version);
+  const result = await saveNote(supabase, noteId, title, body, tags, people, version);
   return NextResponse.json(result);
 }
 

@@ -39,6 +39,7 @@ export default function Editor({
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
   const [tags, setTags] = useState<string[]>(
     note.tags.filter((t) => t.is_header).map((t) => t.tag)
@@ -66,6 +67,8 @@ export default function Editor({
   const [focusMode, setFocusMode] = useState(false);
 
   const lastSavedBody = useRef(note.body);
+  const lastSavedTitle = useRef(note.title);
+  const hasMounted = useRef(false);
 
   // BroadcastChannel: warn if same note open in another tab
   useEffect(() => {
@@ -79,30 +82,39 @@ export default function Editor({
     return () => channel.close();
   }, [note.id]);
 
-  // Autosave
+  // Tags/people: always save immediately on change, regardless of autosave setting
+  useEffect(() => {
+    if (!hasMounted.current) { hasMounted.current = true; return; }
+    if (saving) return;
+    doSave(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tags, people]);
+
+  // Autosave body+title on interval
   useEffect(() => {
     if (!autoSave) return;
     const interval = setInterval(async () => {
-      if (body !== lastSavedBody.current) {
+      if (body !== lastSavedBody.current || title !== lastSavedTitle.current) {
         await doSave(false);
       }
     }, autosaveInterval * 1000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSave, body, autosaveInterval]);
+  }, [autoSave, body, title, autosaveInterval]);
 
   async function doSave(navigate = true) {
     setSaving(true);
     const res = await fetch(`/api/notes/${note.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body, tags, people, version }),
+      body: JSON.stringify({ title, body, tags, people, version }),
     });
     const data = await res.json();
     setSaving(false);
     if (data.ok) {
       setVersion(data.version);
       lastSavedBody.current = body;
+      lastSavedTitle.current = title;
       const t = new Date(data.updated_at);
       setSaveStatus(
         `Saved ${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}`
@@ -346,10 +358,6 @@ export default function Editor({
     <div className={cn("flex flex-col", focusMode ? "fixed inset-0 z-50 bg-background" : "h-[calc(100vh-3.5rem)]")}>
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-border bg-muted/20 flex-wrap">
-        <span className="font-medium text-sm text-foreground truncate max-w-[200px] sm:max-w-xs hidden sm:block">
-          {note.title || "(untitled)"}
-        </span>
-
         <span className={cn(
           "text-xs shrink-0 transition-colors duration-300",
           saveStatus.startsWith("⚠️") ? "text-destructive"
@@ -423,8 +431,18 @@ export default function Editor({
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {/* Textarea */}
+        {/* Title + body */}
         <div className="flex-1 flex flex-col min-h-0 relative">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Note title"
+            className={cn(
+              "w-full px-4 sm:px-6 pt-5 pb-3 text-2xl font-bold bg-transparent outline-none border-b border-border/40 text-foreground placeholder:text-muted-foreground/40",
+              fontClass
+            )}
+          />
           {showNoteSearch && (
             <NoteLinkSearch
               onInsert={insertAtCursor}
@@ -440,7 +458,7 @@ export default function Editor({
               "flex-1 p-4 sm:p-6 text-sm resize-none outline-none border-none bg-background leading-relaxed",
               fontClass
             )}
-            placeholder={`# Note title\n\nWrite your note here…`}
+            placeholder="Write your note here…"
             spellCheck
           />
         </div>
