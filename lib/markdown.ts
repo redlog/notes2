@@ -93,5 +93,25 @@ export function renderMarkdown(
       return `<a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="Image ${n}" class="note-img" /></a>`;
     });
 
-  return out;
+  // Post-process: render #tag and @person as inline pill links.
+  // Skip content inside <code> and <pre> blocks.
+  // tagName/personName match [a-z0-9_-]+ only — safe to interpolate in href/text.
+  let inCode = false;
+  return out.replace(
+    /(<\/?(?:code|pre)\b[^>]*>)|(<[^>]+>)|#([a-z0-9_-]+)|@([a-z0-9_-]+)/g,
+    (match, codeTag, otherTag, tagName, personName) => {
+      if (codeTag) { inCode = !codeTag.startsWith("</"); return codeTag; }
+      if (otherTag) return otherTag;
+      if (inCode) return match;
+      if (tagName) {
+        const href = `/?filter=${encodeURIComponent("#" + tagName)}`;
+        return `<a href="${href}" class="note-tag-inline">#${tagName}</a>`;
+      }
+      if (personName) {
+        const href = `/?filter=${encodeURIComponent("@" + personName)}`;
+        return `<a href="${href}" class="note-person-inline">@${personName}</a>`;
+      }
+      return match;
+    }
+  );
 }

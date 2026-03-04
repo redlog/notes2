@@ -53,6 +53,16 @@
 .note-body td { @apply border border-slate-200 px-3 py-2; }
 .note-body hr { @apply border-slate-200 my-6; }
 .note-body a { @apply text-blue-600 underline underline-offset-2 hover:text-blue-800; }
+.note-body a.note-tag-inline {
+  @apply bg-blue-50/60 border border-dashed border-blue-200 text-blue-600 rounded-full
+         px-1.5 py-0.5 text-xs font-medium no-underline
+         hover:bg-blue-100 hover:text-blue-600 transition-colors;
+}
+.note-body a.note-person-inline {
+  @apply bg-violet-50/60 border border-dashed border-violet-200 text-violet-600 rounded-full
+         px-1.5 py-0.5 text-xs font-medium no-underline
+         hover:bg-violet-100 hover:text-violet-600 transition-colors;
+}
 .note-img { @apply max-w-full rounded-lg shadow-sm my-3; }
 .note-ref { @apply text-blue-600 underline underline-offset-2; }
 del.note-ref-missing { @apply text-red-400 no-underline; text-decoration: line-through; }
