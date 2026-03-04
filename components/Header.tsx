@@ -95,7 +95,7 @@ export default function Header({ projects, activeProject, userEmail, onMenuToggl
 
         {/* New Note */}
         <Button asChild size="sm" className="gap-1.5">
-          <Link href={`/new?project=${activeProject.id}`}>
+          <Link href="/new">
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">New Note</span>
           </Link>

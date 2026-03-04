@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Project, UserSettings } from "./types";
 
@@ -19,17 +20,21 @@ export async function getActiveProject(
   userId: string,
   projectId?: string
 ): Promise<Project | null> {
-  const query = supabase
-    .from("projects")
-    .select("*")
-    .eq("user_id", userId);
+  // Explicit arg → cookie → first project
+  const cookieStore = await cookies();
+  const effectiveId = projectId ?? cookieStore.get("active_project")?.value;
 
-  if (projectId) {
-    const { data } = await query.eq("id", projectId).single();
+  if (effectiveId) {
+    const { data } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("id", effectiveId)
+      .eq("user_id", userId)
+      .single();
     if (data) return data;
   }
 
-  // Fall back to the first project (Default)
+  // Fall back to the first project
   const { data } = await supabase
     .from("projects")
     .select("*")

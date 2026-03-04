@@ -11,7 +11,6 @@ import { cn } from "@/lib/utils";
 interface Props {
   tags: TagCount[];
   people: PersonCount[];
-  projectId: string;
   currentSearch?: string;
   currentFilter?: string;
   onNavigate?: () => void;
@@ -31,7 +30,6 @@ function addFilterToken(currentFilter: string, token: string): string {
 export default function Sidebar({
   tags,
   people,
-  projectId,
   currentSearch = "",
   currentFilter = "",
   onNavigate,
@@ -59,7 +57,6 @@ export default function Sidebar({
 
   function filterHref(token: string) {
     const params = new URLSearchParams();
-    if (projectId) params.set("project", projectId);
     if (currentSearch) params.set("search", currentSearch);
     const newFilter = addFilterToken(currentFilter, token);
     if (newFilter) params.set("filter", newFilter);
@@ -127,7 +124,7 @@ export default function Sidebar({
                 <div className="flex items-center gap-1 shrink-0 ml-1">
                   <span className="text-muted-foreground text-xs tabular-nums">{t.count}</span>
                   <Link
-                    href={`/tagline/${encodeURIComponent(t.tag)}?project=${projectId}`}
+                    href={`/tagline/${encodeURIComponent(t.tag)}`}
                     onClick={onNavigate}
                     title="Tagline view"
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all"

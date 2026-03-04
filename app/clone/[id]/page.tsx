@@ -38,5 +38,5 @@ export default async function CloneNotePage({
     headerPeople
   );
 
-  redirect(`/edit/${newId}?project=${activeProject.id}`);
+  redirect(`/edit/${newId}`);
 }

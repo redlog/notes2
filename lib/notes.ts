@@ -442,6 +442,22 @@ export async function searchTitles(
   return data ?? [];
 }
 
+// ── Date range ────────────────────────────────────────────────────────────────
+
+export async function getEarliestNoteDate(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("notes")
+    .select("created_at")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .single();
+  return data ? data.created_at.split("T")[0] : null;
+}
+
 // ── Taglines ──────────────────────────────────────────────────────────────────
 
 export async function getTaglines(

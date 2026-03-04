@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
-import { listNotes, getTagCounts, getPersonCounts } from "@/lib/notes";
+import { listNotes, getTagCounts, getPersonCounts, getEarliestNoteDate } from "@/lib/notes";
 import AppShell from "@/components/AppShell";
 import NoteRow from "@/components/NoteRow";
 import { Input } from "@/components/ui/input";
@@ -50,7 +50,7 @@ export default async function HomePage({
   const timeMin = sp.time_min;
   const timeMax = sp.time_max;
 
-  const [listResult, tagCounts, peopleCounts] = await Promise.all([
+  const [listResult, tagCounts, peopleCounts, earliestDate] = await Promise.all([
     listNotes(supabase, {
       projectId: activeProject.id,
       search,
@@ -64,7 +64,12 @@ export default async function HomePage({
     }),
     getTagCounts(supabase, activeProject.id),
     getPersonCounts(supabase, activeProject.id),
+    getEarliestNoteDate(supabase, activeProject.id),
   ]);
+
+  const today = new Date().toISOString().split("T")[0];
+  const defaultMin = timeMin ?? earliestDate ?? "";
+  const defaultMax = timeMax ?? today;
 
   const { notes, total } = listResult;
   const totalPages = Math.ceil(total / perPage);
@@ -74,7 +79,6 @@ export default async function HomePage({
   function buildUrl(overrides: Partial<SearchParams>) {
     const params = new URLSearchParams();
     const merged = {
-      project: activeProject!.id,
       search,
       filter,
       pg: String(page),
@@ -96,20 +100,19 @@ export default async function HomePage({
       userEmail={user.email ?? ""}
       tags={tagCounts}
       people={peopleCounts}
-      projectId={activeProject.id}
       currentSearch={search}
       currentFilter={filter}
     >
       <main className="px-4 sm:px-6 py-5 max-w-4xl mx-auto lg:max-w-none">
         {/* Search & Filter */}
         <form method="get" action="/" className="space-y-2 mb-5">
-          <input type="hidden" name="project" value={activeProject.id} />
 
           {/* Search row */}
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
+                key={search}
                 type="text"
                 name="search"
                 defaultValue={search}
@@ -133,25 +136,28 @@ export default async function HomePage({
           {/* Filter row */}
           <div className="flex flex-wrap gap-2 items-center">
             <Input
+              key={filter}
               type="text"
               name="filter"
               defaultValue={filter}
               placeholder="Filter: #tag @person ~#exclude +#exclusive"
               className="flex-1 min-w-48 text-sm"
             />
-            <div className="flex items-center gap-1 text-muted-foreground text-xs shrink-0">
+            <div className="flex items-center gap-1 text-muted-foreground shrink-0">
               <input
+                key={defaultMin}
                 type="date"
                 name="time_min"
-                defaultValue={timeMin}
-                className="h-9 border border-input rounded-md px-2 text-xs bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                defaultValue={defaultMin}
+                className="h-9 min-w-[8rem] border border-input rounded-md px-2 text-sm bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
               <span>–</span>
               <input
+                key={defaultMax}
                 type="date"
                 name="time_max"
-                defaultValue={timeMax}
-                className="h-9 border border-input rounded-md px-2 text-xs bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                defaultValue={defaultMax}
+                className="h-9 min-w-[8rem] border border-input rounded-md px-2 text-sm bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
             </div>
           </div>
@@ -209,7 +215,6 @@ export default async function HomePage({
               <NoteRow
                 key={note.id}
                 note={note}
-                projectId={activeProject.id}
                 currentSearch={search}
                 currentFilter={filter}
                 showScore={!!(search && sortKey === "relevance")}

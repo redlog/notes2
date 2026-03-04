@@ -6,7 +6,6 @@ interface Props {
   isHeader?: boolean;
   currentSearch?: string;
   currentFilter?: string;
-  currentProject?: string;
   variant?: "tag" | "person";
 }
 
@@ -15,14 +14,12 @@ export default function TagPill({
   isHeader = true,
   currentSearch = "",
   currentFilter = "",
-  currentProject = "",
   variant = "tag",
 }: Props) {
   const prefix = variant === "tag" ? "#" : "@";
   const token = `${prefix}${tag}`;
 
   const params = new URLSearchParams();
-  if (currentProject) params.set("project", currentProject);
   if (currentSearch) params.set("search", currentSearch);
   const existingTokens = currentFilter
     .split(/[\s,]+/)

@@ -10,7 +10,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/t
 
 interface Props {
   note: NoteListItem;
-  projectId: string;
   currentSearch?: string;
   currentFilter?: string;
   showScore?: boolean;
@@ -27,7 +26,6 @@ function fmt(iso: string) {
 
 export default function NoteRow({
   note,
-  projectId,
   currentSearch = "",
   currentFilter = "",
   showScore = false,
@@ -77,7 +75,6 @@ export default function NoteRow({
                     isHeader
                     currentSearch={currentSearch}
                     currentFilter={currentFilter}
-                    currentProject={projectId}
                     variant="tag"
                   />
                 ))}
@@ -88,7 +85,6 @@ export default function NoteRow({
                     isHeader
                     currentSearch={currentSearch}
                     currentFilter={currentFilter}
-                    currentProject={projectId}
                     variant="person"
                   />
                 ))}
@@ -99,7 +95,6 @@ export default function NoteRow({
                     isHeader={false}
                     currentSearch={currentSearch}
                     currentFilter={currentFilter}
-                    currentProject={projectId}
                     variant="tag"
                   />
                 ))}
@@ -110,7 +105,6 @@ export default function NoteRow({
                     isHeader={false}
                     currentSearch={currentSearch}
                     currentFilter={currentFilter}
-                    currentProject={projectId}
                     variant="person"
                   />
                 ))}
