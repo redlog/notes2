@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Note, NoteImage } from "@/lib/types";
 import NoteLinkSearch from "./NoteLinkSearch";
@@ -222,6 +222,17 @@ export default function Editor({
 
   const fontClass = font === "mono" ? "font-mono" : font === "serif" ? "font-serif" : "font-sans";
 
+  // Body mention tags/people (live from body text, excluding already-added header ones)
+  const bodyMentionTags = useMemo(() => {
+    const found = [...body.matchAll(/#([a-z0-9_-]+)/g)].map((m) => m[1]);
+    return [...new Set(found)].filter((t) => !tags.includes(t));
+  }, [body, tags]);
+
+  const bodyMentionPeople = useMemo(() => {
+    const found = [...body.matchAll(/@([a-z0-9_-]+)/g)].map((m) => m[1]);
+    return [...new Set(found)].filter((p) => !people.includes(p));
+  }, [body, people]);
+
   const metaPanel = (
     <div className="flex flex-col divide-y divide-border">
       {/* Tags */}
@@ -243,6 +254,15 @@ export default function Editor({
               >
                 ×
               </button>
+            </span>
+          ))}
+          {bodyMentionTags.map((tag) => (
+            <span
+              key={`body-${tag}`}
+              title="Mentioned in body"
+              className="inline-flex items-center gap-1 bg-blue-50/50 border border-dashed border-blue-200 text-blue-600 text-xs px-2 py-0.5 rounded-full"
+            >
+              #{tag}
             </span>
           ))}
         </div>
@@ -298,6 +318,15 @@ export default function Editor({
               >
                 ×
               </button>
+            </span>
+          ))}
+          {bodyMentionPeople.map((person) => (
+            <span
+              key={`body-${person}`}
+              title="Mentioned in body"
+              className="inline-flex items-center gap-1 bg-violet-50/50 border border-dashed border-violet-200 text-violet-600 text-xs px-2 py-0.5 rounded-full"
+            >
+              @{person}
             </span>
           ))}
         </div>
