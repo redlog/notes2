@@ -57,3 +57,19 @@
 .note-ref { @apply text-blue-600 underline underline-offset-2; }
 del.note-ref-missing { @apply text-red-400 no-underline; text-decoration: line-through; }
 .img-missing { @apply text-slate-400 italic; }
+
+/* Remove double-tap zoom delay on interactive elements */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Minimum touch target size on touch-primary devices (Apple HIG: 44pt) */
+@media (hover: none) and (pointer: coarse) {
+  button {
+    min-height: 2.75rem;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select {
+    min-height: 2.75rem;
+  }
+}

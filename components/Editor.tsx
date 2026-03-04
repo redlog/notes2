@@ -16,7 +16,7 @@ import {
 } from "./ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./ui/sheet";
 import { ScrollArea } from "./ui/scroll-area";
-import { Save, X, Tag, Users, SlidersHorizontal } from "lucide-react";
+import { Save, X, Tag, Users, SlidersHorizontal, Maximize2, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -59,6 +59,7 @@ export default function Editor({
   const [personSuggestions, setPersonSuggestions] = useState<string[]>([]);
   const [font, setFont] = useState<"mono" | "sans" | "serif">("mono");
   const [metaOpen, setMetaOpen] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
 
   const lastSavedBody = useRef(note.body);
 
@@ -336,7 +337,7 @@ export default function Editor({
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+    <div className={cn("flex flex-col", focusMode ? "fixed inset-0 z-50 bg-background" : "h-[calc(100vh-3.5rem)]")}>
       {/* Toolbar */}
       <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-border bg-muted/20 flex-wrap">
         <span className="font-medium text-sm text-foreground truncate max-w-[200px] sm:max-w-xs hidden sm:block">
@@ -356,7 +357,7 @@ export default function Editor({
 
         {/* Font selector */}
         <Select value={font} onValueChange={(v) => setFont(v as "mono" | "sans" | "serif")}>
-          <SelectTrigger className="h-7 w-[80px] text-xs border-0 bg-transparent shadow-none focus:ring-0 text-muted-foreground">
+          <SelectTrigger className="h-9 lg:h-7 w-[80px] text-xs border-0 bg-transparent shadow-none focus:ring-0 text-muted-foreground">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -370,11 +371,22 @@ export default function Editor({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 lg:hidden"
+          className="h-10 w-10 lg:hidden"
           onClick={() => setMetaOpen(true)}
           title="Tags, People & Images"
         >
           <SlidersHorizontal className="h-4 w-4" />
+        </Button>
+
+        {/* Focus mode toggle */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 lg:h-7 lg:w-7 shrink-0"
+          onClick={() => setFocusMode((f) => !f)}
+          title={focusMode ? "Exit focus mode" : "Expand editor"}
+        >
+          {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
         </Button>
 
         <div className="flex items-center gap-1.5">
@@ -383,7 +395,7 @@ export default function Editor({
             size="sm"
             onClick={() => doSave(false)}
             disabled={saving}
-            className="h-7 text-xs gap-1"
+            className="h-9 lg:h-7 text-xs gap-1"
           >
             <Save className="h-3.5 w-3.5" />
             {saving ? "Saving…" : "Save"}
@@ -392,11 +404,11 @@ export default function Editor({
             size="sm"
             onClick={() => doSave(true)}
             disabled={saving}
-            className="h-7 text-xs"
+            className="h-9 lg:h-7 text-xs"
           >
             Save & Close
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" asChild>
+          <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-7 lg:w-7" asChild>
             <a href={`/note/${note.id}`} title="Cancel">
               <X className="h-4 w-4" />
             </a>
