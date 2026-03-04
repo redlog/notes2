@@ -49,7 +49,11 @@ export default function Editor({
   const [version, setVersion] = useState(note.version);
   const [images, setImages] = useState<NoteImage[]>(note.images);
   const [signedUrls, setSignedUrls] = useState<Record<number, string>>(initialSignedUrls);
-  const [saveStatus, setSaveStatus] = useState<string>("");
+  const [saveStatus, setSaveStatus] = useState<string>(() => {
+    const t = new Date(note.updated_at);
+    return `Saved ${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}`;
+  });
+  const [justSaved, setJustSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [autoSave, setAutoSave] = useState(autosaveEnabled);
   const [showNoteSearch, setShowNoteSearch] = useState(false);
@@ -101,8 +105,10 @@ export default function Editor({
       lastSavedBody.current = body;
       const t = new Date(data.updated_at);
       setSaveStatus(
-        `Saved ${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}:${t.getSeconds().toString().padStart(2, "0")}`
+        `Saved ${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}`
       );
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 2000);
       if (navigate) router.push(`/note/${note.id}`);
     } else if (data.conflict) {
       setSaveStatus("⚠️ Conflict: modified elsewhere.");
@@ -344,14 +350,14 @@ export default function Editor({
           {note.title || "(untitled)"}
         </span>
 
-        {saveStatus && (
-          <span className={cn(
-            "text-xs shrink-0",
-            saveStatus.startsWith("⚠️") ? "text-destructive" : "text-muted-foreground"
-          )}>
-            {saveStatus}
-          </span>
-        )}
+        <span className={cn(
+          "text-xs shrink-0 transition-colors duration-300",
+          saveStatus.startsWith("⚠️") ? "text-destructive"
+            : justSaved ? "text-green-600 font-medium"
+            : "text-muted-foreground"
+        )}>
+          {saving ? "Saving…" : saveStatus}
+        </span>
 
         <div className="flex-1 hidden sm:block" />
 
