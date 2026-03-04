@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { FolderInput } from "lucide-react";
 import { Button } from "./ui/button";
 import {
@@ -32,7 +31,6 @@ export default function MoveNoteButton({ noteId, currentProjectId, projects }: P
   const [open, setOpen] = useState(false);
   const [targetProjectId, setTargetProjectId] = useState("");
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   const otherProjects = projects.filter((p) => p.id !== currentProjectId);
 
@@ -45,8 +43,7 @@ export default function MoveNoteButton({ noteId, currentProjectId, projects }: P
       body: JSON.stringify({ project_id: targetProjectId }),
     });
     if (res.ok) {
-      router.push(`/note/${noteId}?project=${targetProjectId}`);
-      router.refresh();
+      window.location.href = `/note/${noteId}?project=${targetProjectId}`;
     } else {
       setLoading(false);
       alert("Move failed.");
