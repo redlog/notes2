@@ -110,6 +110,7 @@ export default async function HomePage({
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
+                key={search}
                 type="text"
                 name="search"
                 defaultValue={search}
@@ -133,6 +134,7 @@ export default async function HomePage({
           {/* Filter row */}
           <div className="flex flex-wrap gap-2 items-center">
             <Input
+              key={filter}
               type="text"
               name="filter"
               defaultValue={filter}
