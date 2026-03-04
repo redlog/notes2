@@ -54,7 +54,7 @@ export default function Header({ projects, activeProject, userEmail, onMenuToggl
 
         {/* Logo */}
         <Link
-          href="/"
+          href={`/?project=${activeProject.id}`}
           className="font-semibold text-base tracking-tight text-foreground shrink-0 hover:text-primary transition-colors"
         >
           Localnotes
