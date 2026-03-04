@@ -66,6 +66,7 @@ export default function Editor({
   const [focusMode, setFocusMode] = useState(false);
 
   const lastSavedBody = useRef(note.body);
+  const hasMounted = useRef(false);
 
   // BroadcastChannel: warn if same note open in another tab
   useEffect(() => {
@@ -78,6 +79,14 @@ export default function Editor({
     };
     return () => channel.close();
   }, [note.id]);
+
+  // Immediately save when tags or people change (skip initial mount)
+  useEffect(() => {
+    if (!hasMounted.current) { hasMounted.current = true; return; }
+    if (!autoSave || saving) return;
+    doSave(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tags, people]);
 
   // Autosave
   useEffect(() => {
