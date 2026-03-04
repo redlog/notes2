@@ -65,10 +65,18 @@ export default function Editor({
   const [font, setFont] = useState<"mono" | "sans" | "serif">("mono");
   const [metaOpen, setMetaOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [mentionState, setMentionState] = useState<{
+    type: "tag" | "person";
+    query: string;
+    triggerPos: number;
+    popupTop: number;
+  } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
 
   const lastSavedBody = useRef(note.body);
   const lastSavedTitle = useRef(note.title);
   const hasMounted = useRef(false);
+  const suppressedTriggerPos = useRef<number | null>(null);
 
   // BroadcastChannel: warn if same note open in another tab
   useEffect(() => {
@@ -130,67 +138,84 @@ export default function Editor({
     }
   }
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      const ta = textareaRef.current!;
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-      const beforeCursor = body.slice(0, start);
-      const lineStart = beforeCursor.lastIndexOf("\n") + 1;
-      const currentLine = body.slice(lineStart, end);
-
-      if (e.key === "." && e.ctrlKey) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // ── Mention popup navigation ──────────────────────────────────────────────
+    if (mentionState) {
+      const hasCreate = mentionState.query.length > 0 && !mentionResults.includes(mentionState.query);
+      const total = mentionResults.length + (hasCreate ? 1 : 0);
+      if (e.key === "ArrowDown" && total > 0) {
+        e.preventDefault(); setMentionIndex((i) => Math.min(i + 1, total - 1)); return;
+      }
+      if (e.key === "ArrowUp" && total > 0) {
+        e.preventDefault(); setMentionIndex((i) => Math.max(i - 1, 0)); return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && total > 0) {
         e.preventDefault();
-        setShowNoteSearch(true);
+        insertMention(mentionIndex < mentionResults.length ? mentionResults[mentionIndex] : mentionState.query);
         return;
       }
-
-      if (e.key === "Tab") {
+      if (e.key === "Escape") {
         e.preventDefault();
-        const bulletMatch = currentLine.match(/^(\s*)\* /);
-        if (bulletMatch) {
-          const indent = e.shiftKey
-            ? currentLine.replace(/^    /, "")
-            : "    " + currentLine;
-          const newBody =
-            body.slice(0, lineStart) + indent + body.slice(lineStart + currentLine.length);
+        suppressedTriggerPos.current = mentionState.triggerPos;
+        setMentionState(null);
+        return;
+      }
+    }
+
+    // ── Existing key handling ─────────────────────────────────────────────────
+    const ta = textareaRef.current!;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const beforeCursor = body.slice(0, start);
+    const lineStart = beforeCursor.lastIndexOf("\n") + 1;
+    const currentLine = body.slice(lineStart, end);
+
+    if (e.key === "." && e.ctrlKey) {
+      e.preventDefault();
+      setShowNoteSearch(true);
+      return;
+    }
+
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const bulletMatch = currentLine.match(/^(\s*)\* /);
+      if (bulletMatch) {
+        const indent = e.shiftKey
+          ? currentLine.replace(/^    /, "")
+          : "    " + currentLine;
+        const newBody =
+          body.slice(0, lineStart) + indent + body.slice(lineStart + currentLine.length);
+        setBody(newBody);
+        setTimeout(() => {
+          ta.selectionStart = ta.selectionEnd = start + (e.shiftKey ? -4 : 4);
+        }, 0);
+      } else {
+        const newBody = body.slice(0, start) + "    " + body.slice(end);
+        setBody(newBody);
+        setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 4; }, 0);
+      }
+      return;
+    }
+
+    if (e.key === "Enter" && !e.shiftKey) {
+      const bulletMatch = currentLine.match(/^(\s*)\* (.*)$/);
+      if (bulletMatch) {
+        e.preventDefault();
+        const [, indent, content] = bulletMatch;
+        if (!content.trim()) {
+          const newBody = body.slice(0, lineStart) + body.slice(lineStart + currentLine.length + 1);
           setBody(newBody);
-          setTimeout(() => {
-            ta.selectionStart = ta.selectionEnd = start + (e.shiftKey ? -4 : 4);
-          }, 0);
+          setTimeout(() => { ta.selectionStart = ta.selectionEnd = lineStart; }, 0);
         } else {
-          const newBody = body.slice(0, start) + "    " + body.slice(end);
+          const continuation = `\n${indent}* `;
+          const newBody = body.slice(0, start) + continuation + body.slice(end);
           setBody(newBody);
-          setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 4; }, 0);
+          setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + continuation.length; }, 0);
         }
         return;
       }
-
-      if (e.key === "Enter" && !e.shiftKey) {
-        const bulletMatch = currentLine.match(/^(\s*)\* (.*)$/);
-        if (bulletMatch) {
-          e.preventDefault();
-          const [, indent, content] = bulletMatch;
-          if (!content.trim()) {
-            const newBody = body.slice(0, lineStart) + body.slice(lineStart + currentLine.length + 1);
-            setBody(newBody);
-            setTimeout(() => { ta.selectionStart = ta.selectionEnd = lineStart; }, 0);
-          } else {
-            const continuation = `\n${indent}* `;
-            const newBody = body.slice(0, start) + continuation + body.slice(end);
-            setBody(newBody);
-            setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + continuation.length; }, 0);
-          }
-          return;
-        }
-      }
-
-      if (e.key === "@") {
-        setPersonSuggestions(allPeople.slice(0, 10));
-      }
-    },
-    [body, allPeople]
-  );
+    }
+  }
 
   function insertAtCursor(text: string) {
     const ta = textareaRef.current!;
@@ -220,6 +245,54 @@ export default function Editor({
   function removeTag(tag: string) { setTags(tags.filter((t) => t !== tag)); }
   function removePerson(person: string) { setPeople(people.filter((p) => p !== person)); }
 
+  // ── Mention popup helpers ───────────────────────────────────────────────────
+
+  function detectMentionTrigger(textBefore: string) {
+    let i = textBefore.length - 1;
+    while (i >= 0 && /[a-z0-9_-]/.test(textBefore[i])) i--;
+    if (i < 0) return null;
+    const ch = textBefore[i];
+    if (ch !== "#" && ch !== "@") return null;
+    const prev = i > 0 ? textBefore[i - 1] : null;
+    if (prev !== null && !/[\s\n]/.test(prev)) return null;
+    return { type: (ch === "#" ? "tag" : "person") as "tag" | "person", query: textBefore.slice(i + 1), triggerPos: i };
+  }
+
+  function getMentionPopupTop(textarea: HTMLTextAreaElement, cursorPos: number): number {
+    const TITLE_HEIGHT = 80;
+    const LINE_HEIGHT = 22;
+    const lines = (textarea.value.slice(0, cursorPos).match(/\n/g) || []).length;
+    return TITLE_HEIGHT + lines * LINE_HEIGHT - textarea.scrollTop;
+  }
+
+  function insertMention(item: string) {
+    if (!mentionState) return;
+    const ta = textareaRef.current!;
+    const prefix = mentionState.type === "tag" ? "#" : "@";
+    const newBody = body.slice(0, mentionState.triggerPos) + prefix + item + body.slice(ta.selectionStart);
+    setBody(newBody);
+    const newPos = mentionState.triggerPos + 1 + item.length;
+    setTimeout(() => { ta.selectionStart = ta.selectionEnd = newPos; ta.focus(); }, 0);
+    setMentionState(null);
+    suppressedTriggerPos.current = null;
+  }
+
+  function handleBodyChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const value = e.target.value;
+    setBody(value);
+    const trigger = detectMentionTrigger(value.slice(0, e.target.selectionStart));
+    if (!trigger) {
+      suppressedTriggerPos.current = null;
+      setMentionState(null);
+    } else if (trigger.triggerPos === suppressedTriggerPos.current) {
+      setMentionState(null);
+    } else {
+      suppressedTriggerPos.current = null;
+      setMentionState({ ...trigger, popupTop: getMentionPopupTop(e.target, e.target.selectionStart) });
+      setMentionIndex(0);
+    }
+  }
+
   const fontClass = font === "mono" ? "font-mono" : font === "serif" ? "font-serif" : "font-sans";
 
   // Body mention tags/people (live from body text, excluding already-added header ones)
@@ -232,6 +305,14 @@ export default function Editor({
     const found = [...body.matchAll(/@([a-z0-9_-]+)/g)].map((m) => m[1]);
     return [...new Set(found)].filter((p) => !people.includes(p));
   }, [body, people]);
+
+  const mentionResults = useMemo(() => {
+    if (!mentionState) return [];
+    const list = mentionState.type === "tag" ? allTags : allPeople;
+    const q = mentionState.query.toLowerCase();
+    const filtered = q ? list.filter((t) => t.toLowerCase().includes(q)) : list;
+    return filtered.slice(0, 100);
+  }, [mentionState, allTags, allPeople]);
 
   const metaPanel = (
     <div className="flex flex-col divide-y divide-border">
@@ -478,10 +559,47 @@ export default function Editor({
               onClose={() => setShowNoteSearch(false)}
             />
           )}
+          {/* Mention popup */}
+          {mentionState && (mentionResults.length > 0 || mentionState.query) && (
+            <ul
+              className="absolute z-30 left-4 sm:left-6 bg-popover border border-border rounded-md shadow-lg w-56 max-h-52 overflow-auto py-1"
+              style={{ top: mentionState.popupTop }}
+            >
+              {mentionResults.map((item, idx) => (
+                <li
+                  key={item}
+                  onMouseDown={(e) => { e.preventDefault(); insertMention(item); }}
+                  className={cn(
+                    "flex items-center gap-1 px-3 py-2 cursor-pointer text-sm select-none",
+                    idx === mentionIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
+                  )}
+                >
+                  <span className={mentionState.type === "tag" ? "text-blue-500" : "text-violet-500"}>
+                    {mentionState.type === "tag" ? "#" : "@"}
+                  </span>
+                  {item}
+                </li>
+              ))}
+              {mentionState.query && !mentionResults.includes(mentionState.query) && (
+                <li
+                  onMouseDown={(e) => { e.preventDefault(); insertMention(mentionState.query); }}
+                  className={cn(
+                    "flex items-center gap-1 px-3 py-2 cursor-pointer text-sm select-none text-muted-foreground",
+                    mentionIndex === mentionResults.length ? "bg-accent text-accent-foreground" : "hover:bg-accent hover:text-accent-foreground"
+                  )}
+                >
+                  <span className="text-xs">Add</span>
+                  <span className={mentionState.type === "tag" ? "text-blue-500" : "text-violet-500"}>
+                    {mentionState.type === "tag" ? "#" : "@"}{mentionState.query}
+                  </span>
+                </li>
+              )}
+            </ul>
+          )}
           <textarea
             ref={textareaRef}
             value={body}
-            onChange={(e) => setBody(e.target.value)}
+            onChange={handleBodyChange}
             onKeyDown={handleKeyDown}
             className={cn(
               "flex-1 p-4 sm:p-6 text-sm resize-none outline-none border-none bg-background leading-relaxed",
