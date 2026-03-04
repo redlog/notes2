@@ -46,6 +46,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Persist the active project in a cookie so pages don't need ?project= in every URL
+  const projectId = request.nextUrl.searchParams.get("project");
+  if (projectId) {
+    supabaseResponse.cookies.set("active_project", projectId, {
+      path: "/",
+      sameSite: "lax",
+      httpOnly: true,
+    });
+  }
+
   return supabaseResponse;
 }
 
