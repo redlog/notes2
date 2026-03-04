@@ -89,6 +89,7 @@ export interface ListResult {
 
 export interface SaveNoteRequest {
   noteId: number;
+  title: string;
   body: string;
   tags: string[];
   people: string[];
