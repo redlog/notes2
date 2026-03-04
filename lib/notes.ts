@@ -14,8 +14,8 @@ import type {
 
 // ── Mention extraction ────────────────────────────────────────────────────────
 
-const TAG_RE = /#([\w/-]+)/g;
-const PERSON_RE = /@([\w./-]+)/g;
+const TAG_RE = /#([a-z0-9_-]+)/g;
+const PERSON_RE = /@([a-z0-9_-]+)/g;
 
 export function extractMentions(body: string): {
   tags: string[];

@@ -182,16 +182,18 @@ export default function Editor({
     setShowNoteSearch(false);
   }
 
+  const SLUG_RE = /^[a-z0-9_-]+$/;
+
   function addTag(tag: string) {
     const clean = tag.replace(/^#/, "").trim();
-    if (clean && !tags.includes(clean)) setTags([...tags, clean]);
+    if (clean && SLUG_RE.test(clean) && !tags.includes(clean)) setTags([...tags, clean]);
     setTagInput("");
     setTagSuggestions([]);
   }
 
   function addPerson(person: string) {
     const clean = person.replace(/^@/, "").trim();
-    if (clean && !people.includes(clean)) setPeople([...people, clean]);
+    if (clean && SLUG_RE.test(clean) && !people.includes(clean)) setPeople([...people, clean]);
     setPersonInput("");
     setPersonSuggestions([]);
   }
