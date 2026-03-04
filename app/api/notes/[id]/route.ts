@@ -38,17 +38,18 @@ export async function PUT(
   if (typeof body !== "string" || body.length > MAX_BODY_BYTES) {
     return NextResponse.json({ error: "Note body too large or invalid" }, { status: 400 });
   }
+  const SLUG_RE = /^[a-z0-9_-]+$/;
   if (
     !Array.isArray(tags) ||
     tags.length > MAX_TAGS ||
-    tags.some((t) => typeof t !== "string" || t.length > MAX_TAG_LENGTH)
+    tags.some((t) => typeof t !== "string" || t.length > MAX_TAG_LENGTH || !SLUG_RE.test(t))
   ) {
     return NextResponse.json({ error: "Invalid tags" }, { status: 400 });
   }
   if (
     !Array.isArray(people) ||
     people.length > MAX_PEOPLE ||
-    people.some((p) => typeof p !== "string" || p.length > MAX_PERSON_LENGTH)
+    people.some((p) => typeof p !== "string" || p.length > MAX_PERSON_LENGTH || !SLUG_RE.test(p))
   ) {
     return NextResponse.json({ error: "Invalid people" }, { status: 400 });
   }
