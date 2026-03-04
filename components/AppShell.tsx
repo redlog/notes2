@@ -12,7 +12,6 @@ interface Props {
   userEmail: string;
   tags: TagCount[];
   people: PersonCount[];
-  projectId: string;
   currentSearch?: string;
   currentFilter?: string;
   children: React.ReactNode;
@@ -24,7 +23,6 @@ export default function AppShell({
   userEmail,
   tags,
   people,
-  projectId,
   currentSearch,
   currentFilter,
   children,
@@ -50,7 +48,7 @@ export default function AppShell({
             <Sidebar
               tags={tags}
               people={people}
-              projectId={projectId}
+
               currentSearch={currentSearch}
               currentFilter={currentFilter}
               onNavigate={() => setSidebarOpen(false)}
@@ -66,7 +64,7 @@ export default function AppShell({
             <Sidebar
               tags={tags}
               people={people}
-              projectId={projectId}
+
               currentSearch={currentSearch}
               currentFilter={currentFilter}
             />

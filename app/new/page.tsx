@@ -17,5 +17,5 @@ export default async function NewNotePage({
   if (!activeProject) redirect("/");
 
   const noteId = await createNote(supabase, activeProject.id, user.id);
-  redirect(`/edit/${noteId}?project=${activeProject.id}`);
+  redirect(`/edit/${noteId}`);
 }

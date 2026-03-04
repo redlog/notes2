@@ -74,7 +74,6 @@ export default async function HomePage({
   function buildUrl(overrides: Partial<SearchParams>) {
     const params = new URLSearchParams();
     const merged = {
-      project: activeProject!.id,
       search,
       filter,
       pg: String(page),
@@ -96,14 +95,12 @@ export default async function HomePage({
       userEmail={user.email ?? ""}
       tags={tagCounts}
       people={peopleCounts}
-      projectId={activeProject.id}
       currentSearch={search}
       currentFilter={filter}
     >
       <main className="px-4 sm:px-6 py-5 max-w-4xl mx-auto lg:max-w-none">
         {/* Search & Filter */}
         <form method="get" action="/" className="space-y-2 mb-5">
-          <input type="hidden" name="project" value={activeProject.id} />
 
           {/* Search row */}
           <div className="flex gap-2">
@@ -211,7 +208,6 @@ export default async function HomePage({
               <NoteRow
                 key={note.id}
                 note={note}
-                projectId={activeProject.id}
                 currentSearch={search}
                 currentFilter={filter}
                 showScore={!!(search && sortKey === "relevance")}
