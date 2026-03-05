@@ -248,8 +248,66 @@ export async function saveNote(
 
   await upsertTagsAndPeople(supabase, noteId, tags, people, body);
   await updateInlinks(supabase, noteId, body);
+  await recordNoteVersion(supabase, noteId, newVersion, title, body);
 
   return { ok: true, version: updated.version, updated_at: updated.updated_at };
+}
+
+// ── Version history ───────────────────────────────────────────────────────────
+
+const MAX_VERSIONS = 50;
+
+async function recordNoteVersion(
+  supabase: SupabaseClient,
+  noteId: number,
+  version: number,
+  title: string,
+  body: string
+) {
+  await supabase.from("note_versions").insert({ note_id: noteId, version, title, body });
+
+  // Trim to the most recent MAX_VERSIONS entries
+  const { data: cutoff } = await supabase
+    .from("note_versions")
+    .select("version")
+    .eq("note_id", noteId)
+    .order("version", { ascending: false })
+    .range(MAX_VERSIONS, MAX_VERSIONS);
+  if (cutoff && cutoff.length > 0) {
+    await supabase
+      .from("note_versions")
+      .delete()
+      .eq("note_id", noteId)
+      .lte("version", (cutoff[0] as { version: number }).version);
+  }
+}
+
+export async function getNoteVersions(
+  supabase: SupabaseClient,
+  noteId: number
+): Promise<{ id: number; version: number; title: string; saved_at: string }[]> {
+  const { data, error } = await supabase
+    .from("note_versions")
+    .select("id, version, title, saved_at")
+    .eq("note_id", noteId)
+    .order("version", { ascending: false });
+  if (error || !data) return [];
+  return data as { id: number; version: number; title: string; saved_at: string }[];
+}
+
+export async function getNoteVersion(
+  supabase: SupabaseClient,
+  noteId: number,
+  version: number
+): Promise<{ version: number; title: string; body: string; saved_at: string } | null> {
+  const { data, error } = await supabase
+    .from("note_versions")
+    .select("version, title, body, saved_at")
+    .eq("note_id", noteId)
+    .eq("version", version)
+    .single();
+  if (error || !data) return null;
+  return data as { version: number; title: string; body: string; saved_at: string };
 }
 
 // ── Tags and people upsert ────────────────────────────────────────────────────

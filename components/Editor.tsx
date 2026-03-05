@@ -52,7 +52,7 @@ export default function Editor({
   const [signedUrls, setSignedUrls] = useState<Record<number, string>>(initialSignedUrls);
   const [saveStatus, setSaveStatus] = useState<string>(() => {
     const t = new Date(note.updated_at);
-    return `Saved ${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}`;
+    return `Saved ${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,"0")}-${t.getDate().toString().padStart(2,"0")} ${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}`;
   });
   const [justSaved, setJustSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -76,6 +76,7 @@ export default function Editor({
   const lastSavedBody = useRef(note.body);
   const lastSavedTitle = useRef(note.title);
   const hasMounted = useRef(false);
+  const saveInFlight = useRef(false);
   const suppressedTriggerPos = useRef<number | null>(null);
 
   // BroadcastChannel: warn if same note open in another tab
@@ -111,30 +112,36 @@ export default function Editor({
   }, [autoSave, body, title, autosaveInterval]);
 
   async function doSave(navigate = true) {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
     setSaving(true);
-    const res = await fetch(`/api/notes/${note.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, body, tags, people, version }),
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (data.ok) {
-      setVersion(data.version);
-      lastSavedBody.current = body;
-      lastSavedTitle.current = title;
-      const t = new Date(data.updated_at);
-      setSaveStatus(
-        `Saved ${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}`
-      );
-      setJustSaved(true);
-      setTimeout(() => setJustSaved(false), 2000);
-      if (navigate) router.push(`/note/${note.id}`);
-    } else if (data.conflict) {
-      setSaveStatus("⚠️ Conflict: modified elsewhere.");
-      setAutoSave(false);
-    } else {
-      setSaveStatus("Save failed.");
+    try {
+      const res = await fetch(`/api/notes/${note.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body, tags, people, version }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setVersion(data.version);
+        lastSavedBody.current = body;
+        lastSavedTitle.current = title;
+        const t = new Date(data.updated_at);
+        setSaveStatus(
+          `Saved ${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,"0")}-${t.getDate().toString().padStart(2,"0")} ${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}`
+        );
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 2000);
+        if (navigate) router.push(`/note/${note.id}`);
+      } else if (data.conflict) {
+        setSaveStatus("⚠️ Conflict: modified elsewhere.");
+        setAutoSave(false);
+      } else {
+        setSaveStatus("Save failed.");
+      }
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
     }
   }
 
@@ -466,93 +473,91 @@ export default function Editor({
 
   return (
     <div className={cn("flex flex-col", focusMode ? "fixed inset-0 z-50 bg-background" : "h-[calc(100vh-3.5rem)]")}>
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 px-3 sm:px-4 py-2 border-b border-border bg-muted/20 flex-wrap">
-        <span className={cn(
-          "text-xs shrink-0 transition-colors duration-300",
-          saveStatus.startsWith("⚠️") ? "text-destructive"
-            : justSaved ? "text-green-600 font-medium"
-            : "text-muted-foreground"
-        )}>
-          {saving ? "Saving…" : saveStatus}
-        </span>
-
-        <div className="flex-1 hidden sm:block" />
-
-        {/* Font selector */}
-        <Select value={font} onValueChange={(v) => setFont(v as "mono" | "sans" | "serif")}>
-          <SelectTrigger className="h-9 lg:h-7 w-[80px] text-xs border-0 bg-transparent shadow-none focus:ring-0 text-muted-foreground">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="mono">Mono</SelectItem>
-            <SelectItem value="sans">Sans</SelectItem>
-            <SelectItem value="serif">Serif</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {/* Meta panel toggle — mobile/tablet only */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 lg:hidden"
-          onClick={() => setMetaOpen(true)}
-          title="Tags, People & Images"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-        </Button>
-
-        {/* Focus mode toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-10 w-10 lg:h-7 lg:w-7 shrink-0"
-          onClick={() => setFocusMode((f) => !f)}
-          title={focusMode ? "Exit focus mode" : "Expand editor"}
-        >
-          {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-        </Button>
-
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => doSave(false)}
-            disabled={saving}
-            className="h-9 lg:h-7 text-xs gap-1"
-          >
-            <Save className="h-3.5 w-3.5" />
-            {saving ? "Saving…" : "Save"}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => doSave(true)}
-            disabled={saving}
-            className="h-9 lg:h-7 text-xs"
-          >
-            Save & Close
-          </Button>
-          <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-7 lg:w-7" asChild>
-            <a href={`/note/${note.id}`} title="Cancel">
-              <X className="h-4 w-4" />
-            </a>
-          </Button>
-        </div>
-      </div>
-
       <div className="flex flex-1 min-h-0">
         {/* Title + body */}
         <div className="flex-1 flex flex-col min-h-0 relative">
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Note title"
-            className={cn(
-              "w-full px-4 sm:px-6 pt-5 pb-3 text-2xl font-bold bg-transparent outline-none border-b border-border/40 text-foreground placeholder:text-muted-foreground/40",
-              fontClass
-            )}
-          />
+          {/* Combined sticky title + toolbar */}
+          <div className="sticky top-0 z-10 bg-background border-b border-border flex items-center gap-2 px-3 sm:px-4 py-2">
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Note title"
+              className={cn(
+                "flex-1 min-w-0 text-2xl font-bold bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40",
+                fontClass
+              )}
+            />
+
+            <span className={cn(
+              "text-xs shrink-0 transition-colors duration-300 hidden sm:block",
+              saveStatus.startsWith("⚠️") ? "text-destructive"
+                : justSaved ? "text-green-600 font-medium"
+                : "text-muted-foreground"
+            )}>
+              {saving ? "Saving…" : saveStatus}
+            </span>
+
+            {/* Font selector */}
+            <Select value={font} onValueChange={(v) => setFont(v as "mono" | "sans" | "serif")}>
+              <SelectTrigger className="h-9 lg:h-7 w-[80px] text-xs border-0 bg-transparent shadow-none focus:ring-0 text-muted-foreground shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mono">Mono</SelectItem>
+                <SelectItem value="sans">Sans</SelectItem>
+                <SelectItem value="serif">Serif</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Meta panel toggle — mobile/tablet only */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 lg:hidden shrink-0"
+              onClick={() => setMetaOpen(true)}
+              title="Tags, People & Images"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+
+            {/* Focus mode toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 lg:h-7 lg:w-7 shrink-0"
+              onClick={() => setFocusMode((f) => !f)}
+              title={focusMode ? "Exit focus mode" : "Expand editor"}
+            >
+              {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => doSave(false)}
+                disabled={saving}
+                className="h-9 lg:h-7 text-xs gap-1"
+              >
+                <Save className="h-3.5 w-3.5" />
+                {saving ? "Saving…" : "Save"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => doSave(true)}
+                disabled={saving}
+                className="h-9 lg:h-7 text-xs"
+              >
+                Save & Close
+              </Button>
+              <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-7 lg:w-7" asChild>
+                <a href={`/note/${note.id}`} title="Cancel">
+                  <X className="h-4 w-4" />
+                </a>
+              </Button>
+            </div>
+          </div>
           {showNoteSearch && (
             <NoteLinkSearch
               onInsert={insertAtCursor}
