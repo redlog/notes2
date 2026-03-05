@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import {
-  createProject,
-  updateProject,
-  deleteProject,
-  updateUserSettings,
-} from "@/lib/projects";
+import { getProvider } from "@/lib/providers";
 
 // POST /api/projects — create a new project
 export async function POST(request: Request) {
@@ -16,7 +11,8 @@ export async function POST(request: Request) {
   const { name } = await request.json();
   if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
 
-  const project = await createProject(supabase, user.id, name.trim());
+  const provider = await getProvider();
+  const project = await provider.projects.create(user.id, name.trim());
   return NextResponse.json({ ok: true, project });
 }
 
@@ -27,16 +23,17 @@ export async function PATCH(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
+  const provider = await getProvider();
 
   if (body.projectId) {
-    await updateProject(supabase, body.projectId, {
+    await provider.projects.update(body.projectId, {
       name: body.name,
       trigram_search: body.trigram_search,
     });
   }
 
   if (body.settings) {
-    await updateUserSettings(supabase, user.id, body.settings);
+    await provider.projects.updateSettings(user.id, body.settings);
   }
 
   return NextResponse.json({ ok: true });
@@ -51,16 +48,14 @@ export async function DELETE(request: Request) {
   const { projectId } = await request.json();
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
+  const provider = await getProvider();
+
   // Verify ownership
-  const { data } = await supabase
-    .from("projects")
-    .select("user_id")
-    .eq("id", projectId)
-    .single();
-  if (!data || data.user_id !== user.id) {
+  const ownerId = await provider.projects.checkOwner(projectId);
+  if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await deleteProject(supabase, projectId);
+  await provider.projects.delete(projectId);
   return NextResponse.json({ ok: true });
 }

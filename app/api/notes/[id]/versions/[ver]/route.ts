@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getNoteVersion, saveNote } from "@/lib/notes";
+import { getProvider } from "@/lib/providers";
 
 async function resolveParams(params: Promise<{ id: string; ver: string }>) {
   const { id, ver } = await params;
@@ -25,16 +25,14 @@ export async function GET(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: note } = await supabase
-    .from("notes")
-    .select("user_id")
-    .eq("id", noteId)
-    .single();
-  if (!note || note.user_id !== user.id) {
+  const provider = await getProvider();
+
+  const ownerId = await provider.notes.checkOwner(noteId);
+  if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const snapshot = await getNoteVersion(supabase, noteId, version);
+  const snapshot = await provider.notes.getVersion(noteId, version);
   if (!snapshot) return NextResponse.json({ error: "Version not found" }, { status: 404 });
   return NextResponse.json(snapshot);
 }
@@ -52,25 +50,20 @@ export async function POST(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: note } = await supabase
-    .from("notes")
-    .select("user_id, version, tags:note_tags(tag, is_header), people:note_people(person, is_header)")
-    .eq("id", noteId)
-    .single();
+  const provider = await getProvider();
+
+  const note = await provider.notes.get(noteId);
   if (!note || note.user_id !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const snapshot = await getNoteVersion(supabase, noteId, version);
+  const snapshot = await provider.notes.getVersion(noteId, version);
   if (!snapshot) return NextResponse.json({ error: "Version not found" }, { status: 404 });
 
-  type TagRow = { tag: string; is_header: boolean };
-  type PersonRow = { person: string; is_header: boolean };
-  const headerTags = (note.tags as TagRow[]).filter((t) => t.is_header).map((t) => t.tag);
-  const headerPeople = (note.people as PersonRow[]).filter((p) => p.is_header).map((p) => p.person);
+  const headerTags = note.tags.filter((t) => t.is_header).map((t) => t.tag);
+  const headerPeople = note.people.filter((p) => p.is_header).map((p) => p.person);
 
-  const result = await saveNote(
-    supabase,
+  const result = await provider.notes.save(
     noteId,
     snapshot.title,
     snapshot.body,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { saveNote, deleteNote } from "@/lib/notes";
+import { getProvider } from "@/lib/providers";
 
 const MAX_BODY_BYTES = 500_000; // 500 KB plain-text limit
 const MAX_TAGS = 200;
@@ -22,13 +22,11 @@ export async function PUT(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const provider = await getProvider();
+
   // Explicit ownership check (defense-in-depth alongside RLS)
-  const { data: existing } = await supabase
-    .from("notes")
-    .select("user_id")
-    .eq("id", noteId)
-    .single();
-  if (!existing || existing.user_id !== user.id) {
+  const ownerId = await provider.notes.checkOwner(noteId);
+  if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -60,7 +58,7 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid version" }, { status: 400 });
   }
 
-  const result = await saveNote(supabase, noteId, title, body, tags, people, version);
+  const result = await provider.notes.save(noteId, title, body, tags, people, version);
   return NextResponse.json(result);
 }
 
@@ -83,33 +81,21 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
   }
 
+  const provider = await getProvider();
+
   // Check note ownership
-  const { data: note } = await supabase
-    .from("notes")
-    .select("user_id")
-    .eq("id", noteId)
-    .single();
-  if (!note || note.user_id !== user.id) {
+  const noteOwnerId = await provider.notes.checkOwner(noteId);
+  if (!noteOwnerId || noteOwnerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   // Check target project belongs to user
-  const { data: project } = await supabase
-    .from("projects")
-    .select("id")
-    .eq("id", project_id)
-    .eq("user_id", user.id)
-    .single();
-  if (!project) {
+  const projectOwnerId = await provider.projects.checkOwner(project_id);
+  if (!projectOwnerId || projectOwnerId !== user.id) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const { error } = await supabase
-    .from("notes")
-    .update({ project_id })
-    .eq("id", noteId);
-  if (error) return NextResponse.json({ error: "Update failed" }, { status: 500 });
-
+  await provider.notes.moveToProject(noteId, project_id);
   return NextResponse.json({ ok: true });
 }
 
@@ -127,15 +113,13 @@ export async function DELETE(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data } = await supabase
-    .from("notes")
-    .select("user_id")
-    .eq("id", noteId)
-    .single();
-  if (!data || data.user_id !== user.id) {
+  const provider = await getProvider();
+
+  const ownerId = await provider.notes.checkOwner(noteId);
+  if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await deleteNote(supabase, noteId);
+  await provider.notes.delete(noteId);
   return NextResponse.json({ ok: true });
 }
