@@ -6,7 +6,8 @@
  *
  * Supported values:
  *   supabase  — Vercel + Supabase (current default, no env var needed)
- *   gcp       — Cloud Run + Cloud SQL + GCS (future)
+ *   gcp       — Cloud Run + Cloud SQL + GCS
+ *               Required extra env vars: DATABASE_URL, GCS_BUCKET
  */
 
 import type { DataProvider } from "./types";
@@ -23,6 +24,11 @@ export async function getProvider(): Promise<DataProvider> {
   if (provider === "supabase") {
     const { createSupabaseProvider } = await import("./supabase");
     return createSupabaseProvider();
+  }
+
+  if (provider === "gcp") {
+    const { createGcpProvider } = await import("./gcp");
+    return createGcpProvider();
   }
 
   throw new Error(
