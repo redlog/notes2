@@ -6,6 +6,7 @@ import { getUserProjects, getActiveProject } from "@/lib/projects";
 import { renderMarkdown } from "@/lib/markdown";
 import Header from "@/components/Header";
 import RestoreButton from "./RestoreButton";
+import ClientTime from "./ClientTime";
 import { ArrowLeft, Clock } from "lucide-react";
 
 export default async function NoteVersionPage({
@@ -34,13 +35,6 @@ export default async function NoteVersionPage({
   const activeProject = await getActiveProject(supabase, user.id, note.project_id);
 
   const html = renderMarkdown(snapshot.body, { noteRefs: new Map(), imageUrls: {} });
-
-  function fmt(iso: string) {
-    return new Date(iso).toLocaleString(undefined, {
-      year: "numeric", month: "short", day: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
-  }
 
   const isCurrent = note.version === version;
 
@@ -78,7 +72,7 @@ export default async function NoteVersionPage({
                 <div className="font-semibold text-foreground">Version {version}</div>
                 <div className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {fmt(snapshot.saved_at)}
+                  <ClientTime iso={snapshot.saved_at} />
                 </div>
                 {isCurrent && (
                   <div className="text-green-600 dark:text-green-400 font-medium">Current version</div>
