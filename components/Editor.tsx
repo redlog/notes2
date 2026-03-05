@@ -52,7 +52,7 @@ export default function Editor({
   const [signedUrls, setSignedUrls] = useState<Record<number, string>>(initialSignedUrls);
   const [saveStatus, setSaveStatus] = useState<string>(() => {
     const t = new Date(note.updated_at);
-    return `Saved ${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}`;
+    return `Saved ${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,"0")}-${t.getDate().toString().padStart(2,"0")} ${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}`;
   });
   const [justSaved, setJustSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -125,7 +125,7 @@ export default function Editor({
       lastSavedTitle.current = title;
       const t = new Date(data.updated_at);
       setSaveStatus(
-        `Saved ${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}`
+        `Saved ${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,"0")}-${t.getDate().toString().padStart(2,"0")} ${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}`
       );
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 2000);
