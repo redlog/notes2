@@ -23,7 +23,7 @@ export default function SearchBar({ earliestDate = "" }: { earliestDate?: string
       {nn && <input type="hidden" name="nn" value={nn} />}
 
       {/* Col 1 — search + filter (biggest) */}
-      <div className="flex-1 min-w-0 flex gap-2">
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <Input
@@ -41,12 +41,12 @@ export default function SearchBar({ earliestDate = "" }: { earliestDate?: string
           name="filter"
           defaultValue={sp.get("filter") ?? ""}
           placeholder="#tag  @person  ~#excl  +#excl"
-          className="flex-[1.4] min-w-0 h-8 text-sm"
+          className="w-full h-8 text-sm"
         />
       </div>
 
       {/* Col 2 — date range (medium) */}
-      <div className="flex items-center gap-1 shrink-0 text-muted-foreground text-xs">
+      <div className="flex flex-col gap-1 shrink-0 text-muted-foreground text-xs">
         <input
           key={sp.get("time_min") ?? earliestDate}
           type="date"
@@ -54,7 +54,6 @@ export default function SearchBar({ earliestDate = "" }: { earliestDate?: string
           defaultValue={sp.get("time_min") ?? earliestDate}
           className="h-8 border border-input rounded-md px-2 text-sm bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
-        <span>–</span>
         <input
           key={sp.get("time_max") ?? today}
           type="date"
