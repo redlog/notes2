@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { TagCount, PersonCount } from "@/lib/types";
 import { Hash, Users, AlignLeft, ArrowUp, ArrowDown, ArrowUpDown, Type } from "lucide-react";
@@ -11,8 +12,6 @@ import { cn } from "@/lib/utils";
 interface Props {
   tags: TagCount[];
   people: PersonCount[];
-  currentSearch?: string;
-  currentFilter?: string;
   onNavigate?: () => void;
 }
 
@@ -38,22 +37,13 @@ function DirIcon({ mode, sortKey }: { mode: SortMode; sortKey: SortKey }) {
     : <ArrowDown className="h-3 w-3" />;
 }
 
-function addFilterToken(currentFilter: string, token: string): string {
-  const tokens = currentFilter
-    .split(/[\s,]+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-  if (tokens.includes(token)) return currentFilter;
-  return [...tokens, token].join(" ");
-}
 
 export default function Sidebar({
   tags,
   people,
-  currentSearch = "",
-  currentFilter = "",
   onNavigate,
 }: Props) {
+  const searchParams = useSearchParams();
   const [tagSort, setTagSort] = useState<SortMode>("count-desc");
   const [personSort, setPersonSort] = useState<SortMode>("count-desc");
   const [tagFilter, setTagFilter] = useState("");
@@ -82,9 +72,9 @@ export default function Sidebar({
 
   function filterHref(token: string) {
     const params = new URLSearchParams();
-    if (currentSearch) params.set("search", currentSearch);
-    const newFilter = addFilterToken(currentFilter, token);
-    if (newFilter) params.set("filter", newFilter);
+    const project = searchParams.get("project");
+    if (project) params.set("project", project);
+    params.set("filter", token);
     return `/?${params.toString()}`;
   }
 

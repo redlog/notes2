@@ -100,8 +100,6 @@ export default async function HomePage({
       userEmail={user.email ?? ""}
       tags={tagCounts}
       people={peopleCounts}
-      currentSearch={search}
-      currentFilter={filter}
     >
       <main className="px-4 sm:px-6 py-5 max-w-4xl mx-auto lg:max-w-none">
         {/* Search & Filter */}
