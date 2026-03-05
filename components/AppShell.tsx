@@ -12,8 +12,7 @@ interface Props {
   userEmail: string;
   tags: TagCount[];
   people: PersonCount[];
-  currentSearch?: string;
-  currentFilter?: string;
+  toolbar?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -23,8 +22,7 @@ export default function AppShell({
   userEmail,
   tags,
   people,
-  currentSearch,
-  currentFilter,
+  toolbar,
   children,
 }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -40,7 +38,7 @@ export default function AppShell({
 
       {/* Mobile sidebar sheet */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="w-72 p-0">
+        <SheetContent side="left" className="w-[22rem] p-0">
           <SheetHeader className="px-4 pt-5 pb-2">
             <SheetTitle className="text-base">Browse</SheetTitle>
           </SheetHeader>
@@ -48,9 +46,6 @@ export default function AppShell({
             <Sidebar
               tags={tags}
               people={people}
-
-              currentSearch={currentSearch}
-              currentFilter={currentFilter}
               onNavigate={() => setSidebarOpen(false)}
             />
           </div>
@@ -59,20 +54,22 @@ export default function AppShell({
 
       <div className="flex">
         {/* Desktop sidebar — always visible at lg+ */}
-        <aside className="hidden lg:block w-56 xl:w-64 shrink-0 border-r border-border bg-muted/20">
+        <aside className="hidden lg:block w-80 xl:w-96 shrink-0 border-r border-border bg-muted/20">
           <div className="sticky top-14 overflow-y-auto h-[calc(100vh-3.5rem)] p-4">
             <Sidebar
               tags={tags}
               people={people}
-
-              currentSearch={currentSearch}
-              currentFilter={currentFilter}
             />
           </div>
         </aside>
 
         {/* Main content */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex flex-col">
+          {toolbar && (
+            <div className="sticky top-14 z-10 bg-background/95 backdrop-blur border-b border-border px-4 sm:px-6 py-2">
+              {toolbar}
+            </div>
+          )}
           {children}
         </div>
       </div>

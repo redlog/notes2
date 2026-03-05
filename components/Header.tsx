@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
-import { Menu, Plus, Settings, LogOut, ChevronDown, User, ShieldAlert } from "lucide-react";
+import { Menu, Plus, Settings, LogOut, ChevronDown, User } from "lucide-react";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -137,12 +137,6 @@ export default function Header({ projects, activeProject, userEmail, onMenuToggl
               <Link href="/config" className="cursor-pointer flex items-center gap-2">
                 <Settings className="h-4 w-4" />
                 Settings
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/admin" className="cursor-pointer flex items-center gap-2">
-                <ShieldAlert className="h-4 w-4" />
-                Admin
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />

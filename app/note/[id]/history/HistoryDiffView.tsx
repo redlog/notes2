@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { diffLines, Change } from "diff";
-import { Clock, ChevronRight } from "lucide-react";
+import { Clock, ChevronRight, RotateCcw } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
 type VersionMeta = { version: number; title: string; saved_at: string };
 
@@ -24,10 +26,32 @@ export default function HistoryDiffView({
   noteId: number;
   versions: VersionMeta[];
 }) {
+  const router = useRouter();
+  const currentVersion = Math.max(...versions.map((v) => v.version));
+
   // Up to 2 selected version numbers (in click order)
   const [selected, setSelected] = useState<number[]>([]);
   const [bodies, setBodies] = useState<Record<number, string>>({});
   const [loadingVers, setLoadingVers] = useState<Set<number>>(new Set());
+  const [restoring, setRestoring] = useState<number | null>(null);
+
+  async function restore(ver: number) {
+    if (!confirm("Restore this version? The current note will be replaced.")) return;
+    setRestoring(ver);
+    try {
+      const res = await fetch(`/api/notes/${noteId}/versions/${ver}`, { method: "POST" });
+      if (res.ok) {
+        router.push(`/note/${noteId}`);
+      } else {
+        const { error } = await res.json();
+        alert(error ?? "Restore failed");
+        setRestoring(null);
+      }
+    } catch {
+      alert("Restore failed");
+      setRestoring(null);
+    }
+  }
 
   async function fetchBody(ver: number) {
     if (bodies[ver] !== undefined) return;
@@ -182,8 +206,25 @@ export default function HistoryDiffView({
         )}
 
         {selected.length === 1 && (
-          <div className="flex items-center justify-center h-full p-8 text-sm text-muted-foreground text-center">
-            Now select one more version to compare
+          <div className="flex flex-col items-center justify-center h-full p-8 gap-3 text-center">
+            <p className="text-sm text-muted-foreground">
+              Select one more version to compare
+            </p>
+            {selected[0] !== currentVersion && (
+              <>
+                <p className="text-xs text-muted-foreground">— or —</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => restore(selected[0])}
+                  disabled={restoring === selected[0]}
+                  className="gap-1.5"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {restoring === selected[0] ? "Restoring…" : `Restore v${selected[0]}`}
+                </Button>
+              </>
+            )}
           </div>
         )}
 
@@ -195,7 +236,7 @@ export default function HistoryDiffView({
 
         {ready && diffResult && (
           <>
-            <div className="sticky top-0 px-4 py-1.5 text-xs font-mono border-b border-border bg-muted/60 backdrop-blur flex gap-6">
+            <div className="sticky top-0 px-4 py-1.5 text-xs font-mono border-b border-border bg-muted/60 backdrop-blur flex items-center gap-6">
               <span className="flex items-center gap-1">
                 <span className="text-red-600 font-bold">−</span>
                 <span className="text-muted-foreground">v{oldVer}</span>
@@ -204,6 +245,30 @@ export default function HistoryDiffView({
                 <span className="text-green-600 font-bold">+</span>
                 <span className="text-muted-foreground">v{newVer}</span>
               </span>
+              <div className="ml-auto flex items-center gap-2 font-sans">
+                {oldVer !== currentVersion && (
+                  <button
+                    onClick={() => restore(oldVer!)}
+                    disabled={restoring === oldVer}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                    title={`Restore v${oldVer}`}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    {restoring === oldVer ? "Restoring…" : `Restore v${oldVer}`}
+                  </button>
+                )}
+                {newVer !== currentVersion && (
+                  <button
+                    onClick={() => restore(newVer!)}
+                    disabled={restoring === newVer}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                    title={`Restore v${newVer}`}
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    {restoring === newVer ? "Restoring…" : `Restore v${newVer}`}
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="font-mono text-xs">
