@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { diffLines, Change } from "diff";
-import { Clock } from "lucide-react";
+import { Clock, ChevronRight } from "lucide-react";
+import Link from "next/link";
 
 type VersionMeta = { version: number; title: string; saved_at: string };
 
@@ -82,10 +83,33 @@ export default function HistoryDiffView({
     : null;
 
   return (
-    <div
-      className="flex border border-border rounded-lg overflow-hidden"
-      style={{ minHeight: "65vh" }}
-    >
+    <>
+      {/* ── Mobile: simple list linking to version detail pages ── */}
+      <ul className="md:hidden divide-y divide-border border border-border rounded-lg">
+        {versions.map((v) => (
+          <li key={v.version}>
+            <Link
+              href={`/note/${noteId}/history/${v.version}`}
+              className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium">v{v.version}</div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                  <Clock className="h-3 w-3 shrink-0" />
+                  {fmt(v.saved_at)}
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 ml-auto shrink-0 text-muted-foreground" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+
+      {/* ── md+: diff UI ─────────────────────────────────────── */}
+      <div
+        className="hidden md:flex border border-border rounded-lg overflow-hidden"
+        style={{ minHeight: "65vh" }}
+      >
       {/* ── Version list sidebar ─────────────────────────────── */}
       <div className="w-52 xl:w-60 shrink-0 border-r border-border flex flex-col">
         <div className="px-3 py-2 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-b border-border bg-muted/30">
@@ -227,6 +251,7 @@ export default function HistoryDiffView({
           </>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
