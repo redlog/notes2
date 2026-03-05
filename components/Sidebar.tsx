@@ -152,9 +152,9 @@ export default function Sidebar({
                     href={`/tagline/${encodeURIComponent(t.tag)}`}
                     onClick={onNavigate}
                     title="Tagline view"
-                    className="opacity-40 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-all"
+                    className="p-1 -mr-1 rounded opacity-60 group-hover:opacity-100 text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
                   >
-                    <AlignLeft className="h-3 w-3" />
+                    <AlignLeft className="h-3.5 w-3.5" />
                   </Link>
                 </div>
               </li>
