@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { getActiveProject } from "@/lib/projects";
-import { listNotes, getNote, extractNoteRefs, getSignedImageUrls } from "@/lib/notes";
+import { getProvider } from "@/lib/providers";
+import { extractNoteRefs } from "@/lib/notes";
 import { renderMarkdown } from "@/lib/markdown";
 import type { SortKey, SortOrder } from "@/lib/types";
 
@@ -19,11 +18,13 @@ export async function GET(request: Request) {
   const timeMin = searchParams.get("time_min") ?? undefined;
   const timeMax = searchParams.get("time_max") ?? undefined;
 
-  const project = await getActiveProject(supabase, user.id, projectId || undefined);
+  const provider = await getProvider();
+
+  const project = await provider.projects.getActive(user.id, projectId || undefined);
   if (!project) return new Response("Not found", { status: 404 });
 
   // Fetch all matching notes (no pagination limit for export)
-  const result = await listNotes(supabase, {
+  const result = await provider.notes.list({
     projectId: project.id,
     search,
     filter,
@@ -38,17 +39,12 @@ export async function GET(request: Request) {
   // Render each note
   const rendered: { id: number; title: string; created_at: string; html: string }[] = [];
   for (const item of result.notes) {
-    const note = await getNote(supabase, item.id);
+    const note = await provider.notes.get(item.id);
     if (!note) continue;
 
     const refIds = extractNoteRefs(note.body);
-    const noteRefs = new Map<number, string>();
-    if (refIds.length) {
-      const { data } = await supabase
-        .from("notes").select("id, title").in("id", refIds).eq("user_id", user.id);
-      (data ?? []).forEach((n: { id: number; title: string }) => noteRefs.set(n.id, n.title));
-    }
-    const imageUrls = await getSignedImageUrls(supabase, note.images);
+    const noteRefs = await provider.notes.getRefTitles(refIds, user.id);
+    const imageUrls = await provider.notes.getSignedImageUrls(note.images);
     const html = renderMarkdown(note.body, { noteRefs, imageUrls });
     rendered.push({ id: note.id, title: note.title, created_at: note.created_at, html });
   }
