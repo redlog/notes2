@@ -4,10 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
 import { listNotes, getTagCounts, getPersonCounts, getEarliestNoteDate } from "@/lib/notes";
 import AppShell from "@/components/AppShell";
+import SearchBar from "@/components/SearchBar";
 import NoteRow from "@/components/NoteRow";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, X, ChevronLeft, ChevronRight, Download, ArrowUpDown } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, ArrowUpDown } from "lucide-react";
 import type { SortKey, SortOrder } from "@/lib/types";
 
 interface SearchParams {
@@ -100,66 +100,9 @@ export default async function HomePage({
       userEmail={user.email ?? ""}
       tags={tagCounts}
       people={peopleCounts}
+      toolbar={<SearchBar earliestDate={earliestDate ?? ""} />}
     >
       <main className="px-4 sm:px-6 py-5 max-w-4xl mx-auto lg:max-w-none">
-        {/* Search & Filter */}
-        <form method="get" action="/" className="space-y-2 mb-5">
-
-          {/* Search row */}
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                key={search}
-                type="text"
-                name="search"
-                defaultValue={search}
-                placeholder="Search notes…"
-                className="pl-9"
-              />
-            </div>
-            <Button type="submit" className="shrink-0">
-              Search
-            </Button>
-            {(search || filter) && (
-              <Button variant="outline" asChild className="shrink-0">
-                <Link href={buildUrl({ search: "", filter: "", pg: "1" })}>
-                  <X className="h-4 w-4" />
-                  <span className="hidden sm:inline ml-1">Clear</span>
-                </Link>
-              </Button>
-            )}
-          </div>
-
-          {/* Filter row */}
-          <div className="flex flex-wrap gap-2 items-center">
-            <Input
-              key={filter}
-              type="text"
-              name="filter"
-              defaultValue={filter}
-              placeholder="Filter: #tag @person ~#exclude +#exclusive"
-              className="flex-1 min-w-48 text-sm"
-            />
-            <div className="flex items-center gap-1 text-muted-foreground shrink-0">
-              <input
-                key={defaultMin}
-                type="date"
-                name="time_min"
-                defaultValue={defaultMin}
-                className="h-9 min-w-[8rem] border border-input rounded-md px-2 text-sm bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <span>–</span>
-              <input
-                key={defaultMax}
-                type="date"
-                name="time_max"
-                defaultValue={defaultMax}
-                className="h-9 min-w-[8rem] border border-input rounded-md px-2 text-sm bg-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </div>
-          </div>
-        </form>
 
         {/* Result meta row */}
         <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">

@@ -12,6 +12,7 @@ interface Props {
   userEmail: string;
   tags: TagCount[];
   people: PersonCount[];
+  toolbar?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -21,6 +22,7 @@ export default function AppShell({
   userEmail,
   tags,
   people,
+  toolbar,
   children,
 }: Props) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -62,7 +64,12 @@ export default function AppShell({
         </aside>
 
         {/* Main content */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 flex flex-col">
+          {toolbar && (
+            <div className="sticky top-14 z-10 bg-background/95 backdrop-blur border-b border-border px-4 sm:px-6 py-2">
+              {toolbar}
+            </div>
+          )}
           {children}
         </div>
       </div>
