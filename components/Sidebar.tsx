@@ -89,18 +89,18 @@ export default function Sidebar({
   }
 
   return (
-    <div className="space-y-5 text-sm">
-      {/* Tags section */}
-      <div>
+    <div className="flex gap-3 text-sm">
+      {/* ── Tags column ─────────────────────────────────────── */}
+      <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-1.5 font-semibold text-foreground text-xs uppercase tracking-wider">
-            <Hash className="h-3.5 w-3.5 text-blue-500" />
+          <div className="flex items-center gap-1 font-semibold text-foreground text-xs uppercase tracking-wider">
+            <Hash className="h-3.5 w-3.5 text-blue-500 shrink-0" />
             <span>Tags</span>
             {tags.length > 0 && (
               <span className="text-muted-foreground font-normal">({tags.length})</span>
             )}
           </div>
-          <div className="flex gap-0.5">
+          <div className="flex gap-0.5 shrink-0">
             <button
               onClick={() => setTagSort((s) => toggleSort(s, "count"))}
               title={`Sort by count (${tagSortKey === "count" ? (tagSortDir === "asc" ? "ascending" : "descending") : "click to switch"})`}
@@ -124,15 +124,13 @@ export default function Sidebar({
           </div>
         </div>
 
-        {tags.length > 5 && (
-          <Input
-            type="text"
-            placeholder="Filter tags…"
-            value={tagFilter}
-            onChange={(e) => setTagFilter(e.target.value)}
-            className="h-7 text-xs mb-2"
-          />
-        )}
+        <Input
+          type="text"
+          placeholder="Filter…"
+          value={tagFilter}
+          onChange={(e) => setTagFilter(e.target.value)}
+          className="h-7 text-xs mb-2"
+        />
 
         <ScrollArea className="max-h-72">
           <ul className="space-y-0.5 pr-1">
@@ -160,23 +158,28 @@ export default function Sidebar({
               </li>
             ))}
             {sortedTags.length === 0 && (
-              <li className="text-muted-foreground text-xs py-1 px-1.5">No tags yet</li>
+              <li className="text-muted-foreground text-xs py-1 px-1.5">
+                {tagFilter ? "No matches" : "No tags yet"}
+              </li>
             )}
           </ul>
         </ScrollArea>
       </div>
 
-      {/* People section */}
-      <div>
+      {/* Divider */}
+      <div className="w-px bg-border shrink-0" />
+
+      {/* ── People column ────────────────────────────────────── */}
+      <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-1.5 font-semibold text-foreground text-xs uppercase tracking-wider">
-            <Users className="h-3.5 w-3.5 text-violet-500" />
+          <div className="flex items-center gap-1 font-semibold text-foreground text-xs uppercase tracking-wider">
+            <Users className="h-3.5 w-3.5 text-violet-500 shrink-0" />
             <span>People</span>
             {people.length > 0 && (
               <span className="text-muted-foreground font-normal">({people.length})</span>
             )}
           </div>
-          <div className="flex gap-0.5">
+          <div className="flex gap-0.5 shrink-0">
             <button
               onClick={() => setPersonSort((s) => toggleSort(s, "count"))}
               title={`Sort by count (${personSortKey === "count" ? (personSortDir === "asc" ? "ascending" : "descending") : "click to switch"})`}
@@ -200,15 +203,13 @@ export default function Sidebar({
           </div>
         </div>
 
-        {people.length > 5 && (
-          <Input
-            type="text"
-            placeholder="Filter people…"
-            value={personFilter}
-            onChange={(e) => setPersonFilter(e.target.value)}
-            className="h-7 text-xs mb-2"
-          />
-        )}
+        <Input
+          type="text"
+          placeholder="Filter…"
+          value={personFilter}
+          onChange={(e) => setPersonFilter(e.target.value)}
+          className="h-7 text-xs mb-2"
+        />
 
         <ScrollArea className="max-h-72">
           <ul className="space-y-0.5 pr-1">
@@ -226,7 +227,9 @@ export default function Sidebar({
               </li>
             ))}
             {sortedPeople.length === 0 && (
-              <li className="text-muted-foreground text-xs py-1 px-1.5">No people yet</li>
+              <li className="text-muted-foreground text-xs py-1 px-1.5">
+                {personFilter ? "No matches" : "No people yet"}
+              </li>
             )}
           </ul>
         </ScrollArea>

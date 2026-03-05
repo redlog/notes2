@@ -40,7 +40,7 @@ export default function AppShell({
 
       {/* Mobile sidebar sheet */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="w-72 p-0">
+        <SheetContent side="left" className="w-[22rem] p-0">
           <SheetHeader className="px-4 pt-5 pb-2">
             <SheetTitle className="text-base">Browse</SheetTitle>
           </SheetHeader>
@@ -59,7 +59,7 @@ export default function AppShell({
 
       <div className="flex">
         {/* Desktop sidebar — always visible at lg+ */}
-        <aside className="hidden lg:block w-56 xl:w-64 shrink-0 border-r border-border bg-muted/20">
+        <aside className="hidden lg:block w-80 xl:w-96 shrink-0 border-r border-border bg-muted/20">
           <div className="sticky top-14 overflow-y-auto h-[calc(100vh-3.5rem)] p-4">
             <Sidebar
               tags={tags}
