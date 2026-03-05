@@ -76,6 +76,7 @@ export default function Editor({
   const lastSavedBody = useRef(note.body);
   const lastSavedTitle = useRef(note.title);
   const hasMounted = useRef(false);
+  const saveInFlight = useRef(false);
   const suppressedTriggerPos = useRef<number | null>(null);
 
   // BroadcastChannel: warn if same note open in another tab
@@ -111,30 +112,36 @@ export default function Editor({
   }, [autoSave, body, title, autosaveInterval]);
 
   async function doSave(navigate = true) {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
     setSaving(true);
-    const res = await fetch(`/api/notes/${note.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, body, tags, people, version }),
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (data.ok) {
-      setVersion(data.version);
-      lastSavedBody.current = body;
-      lastSavedTitle.current = title;
-      const t = new Date(data.updated_at);
-      setSaveStatus(
-        `Saved ${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,"0")}-${t.getDate().toString().padStart(2,"0")} ${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}`
-      );
-      setJustSaved(true);
-      setTimeout(() => setJustSaved(false), 2000);
-      if (navigate) router.push(`/note/${note.id}`);
-    } else if (data.conflict) {
-      setSaveStatus("⚠️ Conflict: modified elsewhere.");
-      setAutoSave(false);
-    } else {
-      setSaveStatus("Save failed.");
+    try {
+      const res = await fetch(`/api/notes/${note.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, body, tags, people, version }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setVersion(data.version);
+        lastSavedBody.current = body;
+        lastSavedTitle.current = title;
+        const t = new Date(data.updated_at);
+        setSaveStatus(
+          `Saved ${t.getFullYear()}-${(t.getMonth()+1).toString().padStart(2,"0")}-${t.getDate().toString().padStart(2,"0")} ${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}`
+        );
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 2000);
+        if (navigate) router.push(`/note/${note.id}`);
+      } else if (data.conflict) {
+        setSaveStatus("⚠️ Conflict: modified elsewhere.");
+        setAutoSave(false);
+      } else {
+        setSaveStatus("Save failed.");
+      }
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
     }
   }
 
