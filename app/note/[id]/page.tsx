@@ -9,7 +9,7 @@ import TagPill from "@/components/TagPill";
 import DeleteButton from "@/components/DeleteButton";
 import MoveNoteButton from "@/components/MoveNoteButton";
 import { Button } from "@/components/ui/button";
-import { Pencil, Copy, ArrowLeft, Clock, Calendar, Link2 } from "lucide-react";
+import { Pencil, Copy, ArrowLeft, Clock, Calendar, Link2, History } from "lucide-react";
 
 export default async function ReadNotePage({
   params,
@@ -126,6 +126,12 @@ export default async function ReadNotePage({
                   <Link href={`/clone/${note.id}`}>
                     <Copy className="h-3.5 w-3.5" />
                     Clone
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="gap-1.5">
+                  <Link href={`/note/${note.id}/history`}>
+                    <History className="h-3.5 w-3.5" />
+                    History
                   </Link>
                 </Button>
                 <MoveNoteButton noteId={note.id} currentProjectId={note.project_id} projects={projects} />
