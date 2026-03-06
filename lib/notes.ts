@@ -571,7 +571,7 @@ export async function listProjectImages(
 
   const urlMap: Record<string, string> = {};
   for (const item of signedData ?? []) {
-    if (item.signedUrl) urlMap[item.path] = item.signedUrl;
+    if (item.signedUrl && item.path) urlMap[item.path] = item.signedUrl;
   }
 
   const images: GalleryImage[] = (data as Array<{
