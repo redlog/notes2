@@ -86,6 +86,8 @@ export interface ProjectsDataProvider {
   /** Returns the owner user_id, or null if the project doesn't exist. */
   checkOwner(projectId: string): Promise<string | null>;
   updateSettings(userId: string, updates: Partial<UserSettings>): Promise<void>;
+  /** Deletes all notes (and their tags, people, images) from a project. */
+  clearNotes(projectId: string): Promise<void>;
 }
 
 export interface DataProvider {

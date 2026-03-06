@@ -109,7 +109,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
  * @returns {{ tags: string[], people: string[], body: string }}
  */
 function parseV1Note(content) {
-  const lines = content.split('\n');
+  const lines = content.split(/\r?\n/);
   const tags = [];
   const people = [];
 
@@ -120,10 +120,10 @@ function parseV1Note(content) {
     const attendeesMatch = line.match(/^<!--\s*attendees:\s*(.*?)\s*-->$/i);
 
     if (tagsMatch) {
-      tags.push(...tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean));
+      tags.push(...tagsMatch[1].split(/[\s,]+/).map(t => t.replace(/^#+/, '')).filter(Boolean));
       i++;
     } else if (attendeesMatch) {
-      people.push(...attendeesMatch[1].split(',').map(p => p.trim()).filter(Boolean));
+      people.push(...attendeesMatch[1].split(/[\s,]+/).map(p => p.replace(/^@+/, '')).filter(Boolean));
       i++;
     } else if (line.trim() === '') {
       // Blank line — could be between header comments or trailing after them;
@@ -147,6 +147,11 @@ function parseV1Note(content) {
 function extractTitle(body) {
   const m = body.match(/^#\s+(.+)$/m);
   return m ? m[1].trim() : '(untitled)';
+}
+
+function stripH1(body) {
+  // Remove the first level-1 heading line (and any immediately following blank line)
+  return body.replace(/^#[^\S\n]*[^\n]+\n?(\n)?/, '$1').trimStart();
 }
 
 // ── Directory walker ──────────────────────────────────────────────────────────
@@ -251,6 +256,7 @@ async function migrate() {
 
     const { tags, people, body } = parseV1Note(content);
     const title = extractTitle(body);
+    const cleanBody = stripH1(body);
     const createdAt = new Date(file.timestamp * 1000).toISOString();
     const images = collectImages(file.imageDir);
 
@@ -268,7 +274,7 @@ async function migrate() {
         project_id: PROJECT_ID,
         user_id: USER_ID,
         title,
-        body,
+        body: cleanBody,
         created_at: createdAt,
         updated_at: createdAt,
       })

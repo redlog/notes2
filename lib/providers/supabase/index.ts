@@ -100,6 +100,9 @@ export async function createSupabaseProvider(): Promise<DataProvider> {
 
       updateSettings: (userId, updates) =>
         projectsLib.updateUserSettings(supabase, userId, updates),
+
+      clearNotes: (projectId) =>
+        projectsLib.clearProjectNotes(supabase, projectId),
     },
   };
 }
