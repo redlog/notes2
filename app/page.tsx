@@ -105,7 +105,7 @@ export default async function HomePage({
       people={peopleCounts}
       toolbar={<SearchBar earliestDate={earliestDate ?? ""} />}
     >
-      <main className="px-4 sm:px-6 py-5 max-w-4xl mx-auto lg:max-w-none">
+      <main className="px-4 sm:px-6 py-5 max-w-4xl mx-auto lg:max-w-none w-full">
 
         {/* Result meta row */}
         <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
