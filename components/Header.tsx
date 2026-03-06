@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
-import { Menu, Plus, Settings, LogOut, ChevronDown, User } from "lucide-react";
+import { Menu, Plus, Settings, LogOut, ChevronDown, User, LayoutGrid } from "lucide-react";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -92,6 +92,13 @@ export default function Header({ projects, activeProject, userEmail, onMenuToggl
         )}
 
         <div className="flex-1" />
+
+        {/* Gallery */}
+        <Button asChild variant="ghost" size="icon" className="shrink-0" title="Image gallery">
+          <Link href={`/images?project=${activeProject.id}`}>
+            <LayoutGrid className="h-4 w-4" />
+          </Link>
+        </Button>
 
         {/* New Note */}
         <Button asChild size="sm" className="gap-1.5">

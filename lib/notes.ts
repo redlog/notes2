@@ -10,6 +10,7 @@ import type {
   NoteListItem,
   TagCount,
   PersonCount,
+  GalleryImage,
 } from "./types";
 
 // ── Mention extraction ────────────────────────────────────────────────────────
@@ -511,6 +512,57 @@ export async function getSignedImageUrls(
     })
   );
   return result;
+}
+
+// ── Image gallery ─────────────────────────────────────────────────────────────
+
+export async function listProjectImages(
+  supabase: SupabaseClient,
+  projectId: string,
+  page = 1,
+  perPage = 24,
+): Promise<{ images: GalleryImage[]; total: number; page: number; perPage: number }> {
+  const offset = (page - 1) * perPage;
+
+  const { data, count, error } = await supabase
+    .from("note_images")
+    .select(
+      "img_num, storage_path, note_id, notes!inner(title, created_at)",
+      { count: "exact" }
+    )
+    .eq("notes.project_id", projectId)
+    .order("note_id", { ascending: false })
+    .order("img_num", { ascending: true })
+    .range(offset, offset + perPage - 1);
+
+  if (error || !data) return { images: [], total: 0, page, perPage };
+
+  // Batch-fetch signed URLs in a single request
+  const paths = (data as Array<{ storage_path: string }>).map((r) => r.storage_path);
+  const { data: signedData } = await supabase.storage
+    .from("note-images")
+    .createSignedUrls(paths, 3600);
+
+  const urlMap: Record<string, string> = {};
+  for (const item of signedData ?? []) {
+    if (item.signedUrl) urlMap[item.path] = item.signedUrl;
+  }
+
+  const images: GalleryImage[] = (data as Array<{
+    note_id: number;
+    img_num: number;
+    storage_path: string;
+    notes: { title: string; created_at: string } | null;
+  }>).map((r) => ({
+    note_id: r.note_id,
+    note_title: r.notes?.title ?? "(untitled)",
+    note_created_at: r.notes?.created_at ?? "",
+    img_num: r.img_num,
+    storage_path: r.storage_path,
+    signed_url: urlMap[r.storage_path] ?? "",
+  }));
+
+  return { images, total: count ?? 0, page, perPage };
 }
 
 // ── Title search ──────────────────────────────────────────────────────────────
