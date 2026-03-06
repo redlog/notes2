@@ -42,6 +42,20 @@ export function extractTitle(body: string): string {
   return match ? match[1].trim() : "(untitled)";
 }
 
+// ── Body preview ──────────────────────────────────────────────────────────────
+
+function buildPreview(body: string): string {
+  return body
+    .split("\n")
+    .filter((line) => !line.match(/^#{1,6}\s/))   // drop headings
+    .join(" ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")       // [text](url) → text
+    .replace(/[*_`~>#]/g, "")                       // strip inline markdown
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+}
+
 // ── List notes ────────────────────────────────────────────────────────────────
 
 export async function listNotes(
@@ -127,7 +141,7 @@ export async function listNotes(
   let query = supabase
     .from("notes")
     .select(
-      `id, title, created_at, updated_at,
+      `id, title, body, created_at, updated_at,
        note_tags(tag, is_header),
        note_people(person, is_header)`,
       { count: "exact" }
@@ -171,6 +185,7 @@ export async function listNotes(
     updated_at: row.updated_at as string,
     tags: (row.note_tags as NoteTag[]) ?? [],
     people: (row.note_people as NotePerson[]) ?? [],
+    preview: buildPreview(row.body as string ?? ""),
   }));
 
   // Exclusive/excluded filters still applied client-side (they need the full
@@ -473,10 +488,21 @@ export async function getPersonCounts(
   supabase: SupabaseClient,
   projectId: string
 ): Promise<PersonCount[]> {
+  // Two-step: get project note_ids first, then aggregate people.
+  // Avoids PostgREST !inner join which behaves inconsistently for note_people.
+  const { data: noteData } = await supabase
+    .from("notes")
+    .select("id")
+    .eq("project_id", projectId);
+
+  if (!noteData?.length) return [];
+
+  const noteIds = noteData.map((n: { id: number }) => n.id);
+
   const { data, error } = await supabase
     .from("note_people")
-    .select("person, is_header, note_id, notes!inner(project_id)")
-    .eq("notes.project_id", projectId);
+    .select("person, is_header")
+    .in("note_id", noteIds);
 
   if (error || !data) return [];
 

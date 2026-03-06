@@ -52,6 +52,7 @@ export interface NoteListItem {
   tags: NoteTag[];
   people: NotePerson[];
   score?: number;
+  preview?: string;
 }
 
 export interface UserSettings {
