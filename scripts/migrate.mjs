@@ -149,6 +149,11 @@ function extractTitle(body) {
   return m ? m[1].trim() : '(untitled)';
 }
 
+function stripH1(body) {
+  // Remove the first level-1 heading line (and any immediately following blank line)
+  return body.replace(/^#[^\S\n]*[^\n]+\n?(\n)?/, '$1').trimStart();
+}
+
 // ── Directory walker ──────────────────────────────────────────────────────────
 
 /**
@@ -251,6 +256,7 @@ async function migrate() {
 
     const { tags, people, body } = parseV1Note(content);
     const title = extractTitle(body);
+    const cleanBody = stripH1(body);
     const createdAt = new Date(file.timestamp * 1000).toISOString();
     const images = collectImages(file.imageDir);
 
@@ -268,7 +274,7 @@ async function migrate() {
         project_id: PROJECT_ID,
         user_id: USER_ID,
         title,
-        body,
+        body: cleanBody,
         created_at: createdAt,
         updated_at: createdAt,
       })
