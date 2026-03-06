@@ -574,7 +574,7 @@ export async function listProjectImages(
     if (item.signedUrl && item.path) urlMap[item.path] = item.signedUrl;
   }
 
-  const images: GalleryImage[] = (data as Array<{
+  const images: GalleryImage[] = (data as unknown as Array<{
     note_id: number;
     img_num: number;
     storage_path: string;
