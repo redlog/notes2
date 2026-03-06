@@ -107,7 +107,11 @@ export async function listNotes(
     // Intersect all sets (notes must satisfy every required token)
     let ids: Set<number> | null = null;
     for (const set of idSets) {
-      ids = ids === null ? set : new Set([...ids].filter((id) => set.has(id)));
+      if (ids === null) {
+        ids = set;
+      } else {
+        ids = new Set(Array.from(ids).filter((id) => set.has(id)));
+      }
     }
     filterIds = [...(ids ?? new Set<number>())];
 
