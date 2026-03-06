@@ -87,20 +87,17 @@ export async function listNotes(
   // RLS + the main query's project_id filter ensure cross-project safety.
   let filterIds: number[] | null = null;
   if (requiredTags.length > 0 || requiredPeople.length > 0) {
-    const idSets = await Promise.all([
+    const toIdSet = (data: { note_id: number }[] | null): Set<number> =>
+      new Set<number>((data ?? []).map((r) => r.note_id));
+
+    const idSets: Set<number>[] = await Promise.all([
       ...requiredTags.map((tag) =>
-        supabase
-          .from("note_tags")
-          .select("note_id")
-          .eq("tag", tag)
-          .then(({ data }) => new Set<number>((data ?? []).map((r: { note_id: number }) => r.note_id)))
+        supabase.from("note_tags").select("note_id").eq("tag", tag)
+          .then(({ data }) => toIdSet(data as { note_id: number }[] | null))
       ),
       ...requiredPeople.map((person) =>
-        supabase
-          .from("note_people")
-          .select("note_id")
-          .eq("person", person)
-          .then(({ data }) => new Set<number>((data ?? []).map((r: { note_id: number }) => r.note_id)))
+        supabase.from("note_people").select("note_id").eq("person", person)
+          .then(({ data }) => toIdSet(data as { note_id: number }[] | null))
       ),
     ]);
 
@@ -110,7 +107,11 @@ export async function listNotes(
       if (ids === null) {
         ids = set;
       } else {
-        ids = new Set(Array.from(ids).filter((id) => set.has(id)));
+        const next = new Set<number>();
+        for (const id of ids) {
+          if (set.has(id)) next.add(id);
+        }
+        ids = next;
       }
     }
     filterIds = [...(ids ?? new Set<number>())];
