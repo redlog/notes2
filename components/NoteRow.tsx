@@ -14,6 +14,7 @@ interface Props {
   currentFilter?: string;
   showScore?: boolean;
   showUpdated?: boolean;
+  showPreview?: boolean;
 }
 
 function fmt(iso: string) {
@@ -30,6 +31,7 @@ export default function NoteRow({
   currentFilter = "",
   showScore = false,
   showUpdated = false,
+  showPreview = true,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [body, setBody] = useState<string | null>(null);
@@ -111,8 +113,8 @@ export default function NoteRow({
               </div>
             )}
 
-            {/* Body preview — wide screens only */}
-            {note.preview && (
+            {/* Body preview — wide screens only, hidden when expanded */}
+            {note.preview && showPreview && !expanded && (
               <p className="hidden xl:block text-xs text-muted-foreground/70 mt-1.5 line-clamp-2 leading-relaxed">
                 {note.preview}
               </p>

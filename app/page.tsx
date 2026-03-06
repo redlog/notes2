@@ -18,6 +18,7 @@ interface SearchParams {
   nn?: string;
   sk?: string;
   so?: string;
+  pv?: string;
   time_min?: string;
   time_max?: string;
   export?: string;
@@ -47,6 +48,7 @@ export default async function HomePage({
   const perPage = Number(sp.nn ?? settings.notes_per_page);
   const sortKey = (sp.sk ?? (search ? "relevance" : "created_at")) as SortKey;
   const sortOrder = (sp.so ?? "desc") as SortOrder;
+  const showPreview = sp.pv !== "0";
   const timeMin = sp.time_min;
   const timeMax = sp.time_max;
 
@@ -85,6 +87,7 @@ export default async function HomePage({
       nn: String(perPage),
       sk: sortKey,
       so: sortOrder,
+      pv: showPreview ? undefined : "0",
       ...overrides,
     };
     Object.entries(merged).forEach(([k, v]) => { if (v) params.set(k, v); });
@@ -133,6 +136,15 @@ export default async function HomePage({
             >
               {sortOrder === "asc" ? "↑" : "↓"}
             </Link>
+            <Link
+              href={buildUrl({ pv: showPreview ? "0" : "1" })}
+              className="flex items-center gap-1.5 px-2 py-1.5 lg:py-0.5 rounded text-xs hover:bg-muted transition-colors ml-2"
+            >
+              <span className={`h-3.5 w-3.5 border rounded-sm flex items-center justify-center shrink-0 transition-colors ${showPreview ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/50"}`}>
+                {showPreview && <span className="text-[9px] leading-none font-bold">✓</span>}
+              </span>
+              Previews
+            </Link>
           </div>
         </div>
 
@@ -160,6 +172,7 @@ export default async function HomePage({
                 currentFilter={filter}
                 showScore={!!(search && sortKey === "relevance")}
                 showUpdated={sortKey === "updated_at"}
+                showPreview={showPreview}
               />
             ))
           )}
