@@ -111,6 +111,13 @@ export default function NoteRow({
               </div>
             )}
 
+            {/* Body preview — wide screens only */}
+            {note.preview && (
+              <p className="hidden xl:block text-xs text-muted-foreground/70 mt-1.5 line-clamp-2 leading-relaxed">
+                {note.preview}
+              </p>
+            )}
+
             {/* Date row */}
             <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">

@@ -10,6 +10,7 @@ import type {
   NoteListItem,
   TagCount,
   PersonCount,
+  GalleryImage,
 } from "./types";
 
 // ── Mention extraction ────────────────────────────────────────────────────────
@@ -39,6 +40,20 @@ export function extractNoteRefs(body: string): number[] {
 export function extractTitle(body: string): string {
   const match = body.match(/^#\s+(.+)$/m);
   return match ? match[1].trim() : "(untitled)";
+}
+
+// ── Body preview ──────────────────────────────────────────────────────────────
+
+function buildPreview(body: string): string {
+  return body
+    .split("\n")
+    .filter((line) => !line.match(/^#{1,6}\s/))   // drop headings
+    .join(" ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")       // [text](url) → text
+    .replace(/[*_`~>#]/g, "")                       // strip inline markdown
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
 }
 
 // ── List notes ────────────────────────────────────────────────────────────────
@@ -126,7 +141,7 @@ export async function listNotes(
   let query = supabase
     .from("notes")
     .select(
-      `id, title, created_at, updated_at,
+      `id, title, body, created_at, updated_at,
        note_tags(tag, is_header),
        note_people(person, is_header)`,
       { count: "exact" }
@@ -170,6 +185,7 @@ export async function listNotes(
     updated_at: row.updated_at as string,
     tags: (row.note_tags as NoteTag[]) ?? [],
     people: (row.note_people as NotePerson[]) ?? [],
+    preview: buildPreview(row.body as string ?? ""),
   }));
 
   // Exclusive/excluded filters still applied client-side (they need the full
@@ -472,10 +488,21 @@ export async function getPersonCounts(
   supabase: SupabaseClient,
   projectId: string
 ): Promise<PersonCount[]> {
+  // Two-step: get project note_ids first, then aggregate people.
+  // Avoids PostgREST !inner join which behaves inconsistently for note_people.
+  const { data: noteData } = await supabase
+    .from("notes")
+    .select("id")
+    .eq("project_id", projectId);
+
+  if (!noteData?.length) return [];
+
+  const noteIds = noteData.map((n: { id: number }) => n.id);
+
   const { data, error } = await supabase
     .from("note_people")
-    .select("person, is_header, note_id, notes!inner(project_id)")
-    .eq("notes.project_id", projectId);
+    .select("person, is_header")
+    .in("note_id", noteIds);
 
   if (error || !data) return [];
 
@@ -511,6 +538,57 @@ export async function getSignedImageUrls(
     })
   );
   return result;
+}
+
+// ── Image gallery ─────────────────────────────────────────────────────────────
+
+export async function listProjectImages(
+  supabase: SupabaseClient,
+  projectId: string,
+  page = 1,
+  perPage = 24,
+): Promise<{ images: GalleryImage[]; total: number; page: number; perPage: number }> {
+  const offset = (page - 1) * perPage;
+
+  const { data, count, error } = await supabase
+    .from("note_images")
+    .select(
+      "img_num, storage_path, note_id, notes!inner(title, created_at)",
+      { count: "exact" }
+    )
+    .eq("notes.project_id", projectId)
+    .order("note_id", { ascending: false })
+    .order("img_num", { ascending: true })
+    .range(offset, offset + perPage - 1);
+
+  if (error || !data) return { images: [], total: 0, page, perPage };
+
+  // Batch-fetch signed URLs in a single request
+  const paths = (data as Array<{ storage_path: string }>).map((r) => r.storage_path);
+  const { data: signedData } = await supabase.storage
+    .from("note-images")
+    .createSignedUrls(paths, 3600);
+
+  const urlMap: Record<string, string> = {};
+  for (const item of signedData ?? []) {
+    if (item.signedUrl && item.path) urlMap[item.path] = item.signedUrl;
+  }
+
+  const images: GalleryImage[] = (data as unknown as Array<{
+    note_id: number;
+    img_num: number;
+    storage_path: string;
+    notes: { title: string; created_at: string } | null;
+  }>).map((r) => ({
+    note_id: r.note_id,
+    note_title: r.notes?.title ?? "(untitled)",
+    note_created_at: r.notes?.created_at ?? "",
+    img_num: r.img_num,
+    storage_path: r.storage_path,
+    signed_url: urlMap[r.storage_path] ?? "",
+  }));
+
+  return { images, total: count ?? 0, page, perPage };
 }
 
 // ── Title search ──────────────────────────────────────────────────────────────

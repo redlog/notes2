@@ -35,6 +35,15 @@ export interface NoteImage {
   storage_path: string;
 }
 
+export interface GalleryImage {
+  note_id: number;
+  note_title: string;
+  note_created_at: string;
+  img_num: number;
+  storage_path: string;
+  signed_url: string;
+}
+
 export interface NoteListItem {
   id: number;
   title: string;
@@ -43,6 +52,7 @@ export interface NoteListItem {
   tags: NoteTag[];
   people: NotePerson[];
   score?: number;
+  preview?: string;
 }
 
 export interface UserSettings {
