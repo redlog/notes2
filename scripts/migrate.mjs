@@ -109,7 +109,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
  * @returns {{ tags: string[], people: string[], body: string }}
  */
 function parseV1Note(content) {
-  const lines = content.split('\n');
+  const lines = content.split(/\r?\n/);
   const tags = [];
   const people = [];
 
