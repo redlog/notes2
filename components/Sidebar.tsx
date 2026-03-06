@@ -6,7 +6,6 @@ import Link from "next/link";
 import type { TagCount, PersonCount } from "@/lib/types";
 import { Hash, Users, AlignLeft, ArrowUp, ArrowDown, ArrowUpDown, Type } from "lucide-react";
 import { Input } from "./ui/input";
-import { ScrollArea } from "./ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -79,9 +78,9 @@ export default function Sidebar({
   }
 
   return (
-    <div className="flex gap-3 text-sm">
+    <div className="flex gap-3 text-sm h-full">
       {/* ── Tags column ─────────────────────────────────────── */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex flex-col">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1 font-semibold text-foreground text-xs uppercase tracking-wider">
             <Hash className="h-3.5 w-3.5 text-blue-500 shrink-0" />
@@ -122,7 +121,7 @@ export default function Sidebar({
           className="h-7 text-xs mb-2"
         />
 
-        <ScrollArea className="max-h-72">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <ul className="space-y-0.5 pr-1">
             {sortedTags.map((t) => (
               <li key={t.tag} className="flex items-center justify-between group">
@@ -153,14 +152,14 @@ export default function Sidebar({
               </li>
             )}
           </ul>
-        </ScrollArea>
+        </div>
       </div>
 
       {/* Divider */}
       <div className="w-px bg-border shrink-0" />
 
       {/* ── People column ────────────────────────────────────── */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 flex flex-col">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1 font-semibold text-foreground text-xs uppercase tracking-wider">
             <Users className="h-3.5 w-3.5 text-violet-500 shrink-0" />
@@ -201,7 +200,7 @@ export default function Sidebar({
           className="h-7 text-xs mb-2"
         />
 
-        <ScrollArea className="max-h-72">
+        <div className="flex-1 overflow-y-auto min-h-0">
           <ul className="space-y-0.5 pr-1">
             {sortedPeople.map((p) => (
               <li key={p.person} className="flex items-center justify-between">
@@ -222,7 +221,7 @@ export default function Sidebar({
               </li>
             )}
           </ul>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );
