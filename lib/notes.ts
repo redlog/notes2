@@ -82,6 +82,46 @@ export async function listNotes(
     .filter((t) => t.startsWith("~#"))
     .map((t) => t.slice(2));
 
+  // ── DB-side pre-filter for required tags/people ───────────────────────────
+  // Pre-query note_ids so the paginated query uses the correct total count.
+  // RLS + the main query's project_id filter ensure cross-project safety.
+  let filterIds: number[] | null = null;
+  if (requiredTags.length > 0 || requiredPeople.length > 0) {
+    const toIdSet = (data: { note_id: number }[] | null): Set<number> =>
+      new Set<number>((data ?? []).map((r) => r.note_id));
+
+    const idSets: Set<number>[] = await Promise.all([
+      ...requiredTags.map((tag) =>
+        supabase.from("note_tags").select("note_id").eq("tag", tag)
+          .then(({ data }) => toIdSet(data as { note_id: number }[] | null))
+      ),
+      ...requiredPeople.map((person) =>
+        supabase.from("note_people").select("note_id").eq("person", person)
+          .then(({ data }) => toIdSet(data as { note_id: number }[] | null))
+      ),
+    ]);
+
+    // Intersect all sets (notes must satisfy every required token)
+    let ids: Set<number> | null = null;
+    for (const set of idSets) {
+      if (ids === null) {
+        ids = set;
+      } else {
+        const next = new Set<number>();
+        for (const id of ids) {
+          if (set.has(id)) next.add(id);
+        }
+        ids = next;
+      }
+    }
+    filterIds = [...(ids ?? new Set<number>())];
+
+    // Short-circuit: no notes match all filters
+    if (filterIds.length === 0) {
+      return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+    }
+  }
+
   // Build base query with search
   let query = supabase
     .from("notes")
@@ -92,6 +132,10 @@ export async function listNotes(
       { count: "exact" }
     )
     .eq("project_id", projectId);
+
+  if (filterIds !== null) {
+    query = query.in("id", filterIds);
+  }
 
   if (search) {
     // Use websearch_to_tsquery for natural language; fall back to trigram for partial matches
@@ -109,8 +153,6 @@ export async function listNotes(
     query = query.lt("created_at", end.toISOString());
   }
 
-  // Tag/people filters applied post-fetch (Supabase doesn't support arbitrary
-  // subquery filters in the JS client easily; for large datasets, use DB functions)
   const resolvedSortKey =
     search && sortKey === "relevance" ? "created_at" : sortKey;
   query = query
@@ -120,7 +162,7 @@ export async function listNotes(
   const { data, count, error } = await query;
   if (error) throw error;
 
-  // Client-side filter application
+  // Map rows — requiredTags/People now handled DB-side
   let notes: NoteListItem[] = (data ?? []).map((row: Record<string, unknown>) => ({
     id: row.id as number,
     title: row.title as string,
@@ -130,17 +172,8 @@ export async function listNotes(
     people: (row.note_people as NotePerson[]) ?? [],
   }));
 
-  // Apply tag/people filters
-  if (requiredTags.length) {
-    notes = notes.filter((n) =>
-      requiredTags.every((t) => n.tags.some((nt) => nt.tag === t))
-    );
-  }
-  if (requiredPeople.length) {
-    notes = notes.filter((n) =>
-      requiredPeople.every((p) => n.people.some((np) => np.person === p))
-    );
-  }
+  // Exclusive/excluded filters still applied client-side (they need the full
+  // tag/person set per note and are uncommon enough not to affect typical pagination)
   if (exclusiveTags.length) {
     notes = notes.filter(
       (n) =>

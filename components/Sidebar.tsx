@@ -213,7 +213,7 @@ export default function Sidebar({
                   <span className="text-violet-400 mr-0.5">@</span>
                   {p.person}
                 </Link>
-                <span className="text-muted-foreground text-xs tabular-nums ml-1 shrink-0">{p.count}</span>
+                <span className="text-muted-foreground text-xs tabular-nums ml-1 shrink-0 min-w-[1.5rem] text-right">{p.count}</span>
               </li>
             ))}
             {sortedPeople.length === 0 && (
