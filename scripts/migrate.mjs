@@ -120,10 +120,10 @@ function parseV1Note(content) {
     const attendeesMatch = line.match(/^<!--\s*attendees:\s*(.*?)\s*-->$/i);
 
     if (tagsMatch) {
-      tags.push(...tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean));
+      tags.push(...tagsMatch[1].split(/[\s,]+/).map(t => t.replace(/^#+/, '')).filter(Boolean));
       i++;
     } else if (attendeesMatch) {
-      people.push(...attendeesMatch[1].split(',').map(p => p.trim()).filter(Boolean));
+      people.push(...attendeesMatch[1].split(/[\s,]+/).map(p => p.replace(/^@+/, '')).filter(Boolean));
       i++;
     } else if (line.trim() === '') {
       // Blank line — could be between header comments or trailing after them;
