@@ -100,6 +100,17 @@ export async function deleteProject(
   if (error) throw error;
 }
 
+export async function clearProjectNotes(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("notes")
+    .delete()
+    .eq("project_id", projectId);
+  if (error) throw error;
+}
+
 export async function updateUserSettings(
   supabase: SupabaseClient,
   userId: string,

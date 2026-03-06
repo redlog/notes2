@@ -47,6 +47,7 @@ export default async function ConfigPage({
           activeProject={activeProject}
           settings={settings}
           userEmail={user.email ?? ""}
+          userId={user.id}
         />
       </div>
     </div>

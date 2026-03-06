@@ -570,6 +570,10 @@ function buildProjectsProvider(db: Pool): ProjectsDataProvider {
       vals.push(userId);
       await db.query(`UPDATE user_settings SET ${sets.join(", ")} WHERE user_id = $${i}`, vals);
     },
+
+    async clearNotes(projectId): Promise<void> {
+      await db.query("DELETE FROM notes WHERE project_id = $1", [projectId]);
+    },
   };
 }
 
