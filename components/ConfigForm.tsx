@@ -7,7 +7,8 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
 import { Separator } from "./ui/separator";
-import { Save, Plus, Trash2, Check, AlertTriangle } from "lucide-react";
+import { Save, Plus, Trash2, Check, AlertTriangle, User, FolderOpen } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Props {
   projects: Project[];
@@ -17,29 +18,30 @@ interface Props {
   userId: string;
 }
 
-export default function ConfigForm({ projects, activeProject, settings, userEmail, userId }: Props) {
+// ─── User Settings Panel ──────────────────────────────────────────────────────
+
+function UserSettingsPanel({
+  settings,
+  userEmail,
+  userId,
+}: {
+  settings: UserSettings;
+  userEmail: string;
+  userId: string;
+}) {
   const router = useRouter();
-  const [projectName, setProjectName] = useState(activeProject.name);
-  const [trigramSearch, setTrigramSearch] = useState(activeProject.trigram_search);
   const [notesPerPage, setNotesPerPage] = useState(settings.notes_per_page);
   const [autosaveEnabled, setAutosaveEnabled] = useState(settings.autosave_enabled);
   const [autosaveInterval, setAutosaveInterval] = useState(settings.autosave_interval);
-  const [newProjectName, setNewProjectName] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState("");
-  const [clearConfirm, setClearConfirm] = useState("");
-  const [clearing, setClearing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  async function saveSettings() {
+  async function save() {
     setSaving(true);
     const res = await fetch("/api/projects", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        projectId: activeProject.id,
-        name: projectName,
-        trigram_search: trigramSearch,
         settings: {
           notes_per_page: notesPerPage,
           autosave_enabled: autosaveEnabled,
@@ -49,59 +51,17 @@ export default function ConfigForm({ projects, activeProject, settings, userEmai
     });
     setSaving(false);
     if (res.ok) {
-      setMsg("Settings saved.");
+      setMsg("Saved.");
       router.refresh();
     } else {
       setMsg("Save failed.");
     }
   }
 
-  async function createProject() {
-    if (!newProjectName.trim()) return;
-    const res = await fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newProjectName.trim() }),
-    });
-    if (res.ok) {
-      setNewProjectName("");
-      router.refresh();
-    }
-  }
-
-  async function clearNotes() {
-    if (clearConfirm !== "clear") return;
-    setClearing(true);
-    const res = await fetch("/api/projects/clear", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: activeProject.id }),
-    });
-    setClearing(false);
-    if (res.ok) {
-      setClearConfirm("");
-      router.refresh();
-    }
-  }
-
-  async function deleteProject() {
-    if (deleteConfirm !== "delete") return;
-    const res = await fetch("/api/projects", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: activeProject.id }),
-    });
-    if (res.ok) {
-      router.push("/");
-      router.refresh();
-    }
-  }
-
   return (
     <div className="space-y-8">
-      {/* Account */}
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-foreground">Account</h2>
+        <h2 className="text-sm font-semibold">Account</h2>
         <Separator />
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-2">
           <div>
@@ -115,57 +75,8 @@ export default function ConfigForm({ projects, activeProject, settings, userEmai
         </div>
       </section>
 
-      {/* Project info */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-foreground">Project info</h2>
-        <Separator />
-        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-2">
-          <div>
-            <p className="text-xs text-muted-foreground">Project ID</p>
-            <p className="text-xs font-mono text-foreground break-all">{activeProject.id}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Created</p>
-            <p className="text-sm text-foreground">
-              {new Date(activeProject.created_at).toLocaleString()}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Active project settings */}
       <section className="space-y-4">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">Project settings</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">{activeProject.name}</p>
-        </div>
-        <Separator />
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Project name</label>
-            <Input
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              className="max-w-sm"
-            />
-          </div>
-
-          <div className="flex items-center justify-between max-w-sm">
-            <div>
-              <p className="text-sm font-medium">Trigram search</p>
-              <p className="text-xs text-muted-foreground">Enables partial-word matching</p>
-            </div>
-            <Switch
-              checked={trigramSearch}
-              onCheckedChange={setTrigramSearch}
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* User preferences */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-foreground">Preferences</h2>
+        <h2 className="text-sm font-semibold">Preferences</h2>
         <Separator />
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -185,10 +96,7 @@ export default function ConfigForm({ projects, activeProject, settings, userEmai
               <p className="text-sm font-medium">Autosave</p>
               <p className="text-xs text-muted-foreground">Automatically save while editing</p>
             </div>
-            <Switch
-              checked={autosaveEnabled}
-              onCheckedChange={setAutosaveEnabled}
-            />
+            <Switch checked={autosaveEnabled} onCheckedChange={setAutosaveEnabled} />
           </div>
 
           {autosaveEnabled && (
@@ -208,11 +116,10 @@ export default function ConfigForm({ projects, activeProject, settings, userEmai
         </div>
       </section>
 
-      {/* Save button */}
       <div className="flex items-center gap-3">
-        <Button onClick={saveSettings} disabled={saving} className="gap-1.5">
+        <Button onClick={save} disabled={saving} className="gap-1.5">
           <Save className="h-4 w-4" />
-          {saving ? "Saving…" : "Save settings"}
+          {saving ? "Saving…" : "Save"}
         </Button>
         {msg && (
           <span className="text-sm text-muted-foreground flex items-center gap-1">
@@ -222,96 +129,293 @@ export default function ConfigForm({ projects, activeProject, settings, userEmai
         )}
       </div>
 
-      {/* Projects */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-foreground">Projects</h2>
+      <p className="text-xs text-muted-foreground pt-2">Localnotes v2</p>
+    </div>
+  );
+}
+
+// ─── Project Settings Panel ───────────────────────────────────────────────────
+
+function ProjectSettingsPanel({
+  project,
+  projects,
+}: {
+  project: Project;
+  projects: Project[];
+}) {
+  const router = useRouter();
+  const [projectName, setProjectName] = useState(project.name);
+  const [trigramSearch, setTrigramSearch] = useState(project.trigram_search);
+  const [clearConfirm, setClearConfirm] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [clearing, setClearing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function save() {
+    setSaving(true);
+    const res = await fetch("/api/projects", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        name: projectName,
+        trigram_search: trigramSearch,
+      }),
+    });
+    setSaving(false);
+    if (res.ok) {
+      setMsg("Saved.");
+      router.refresh();
+    } else {
+      setMsg("Save failed.");
+    }
+  }
+
+  async function clearNotes() {
+    if (clearConfirm !== "clear") return;
+    setClearing(true);
+    const res = await fetch("/api/projects/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id }),
+    });
+    setClearing(false);
+    if (res.ok) {
+      setClearConfirm("");
+      router.refresh();
+    }
+  }
+
+  async function deleteProject() {
+    if (deleteConfirm !== "delete") return;
+    const res = await fetch("/api/projects", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id }),
+    });
+    if (res.ok) {
+      router.push("/");
+      router.refresh();
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Project info */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold">Project info</h2>
         <Separator />
-        <ul className="space-y-1">
-          {projects.map((p) => (
-            <li
-              key={p.id}
-              className={`text-sm px-3 py-1.5 rounded-md ${
-                p.id === activeProject.id
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground"
-              }`}
-            >
-              {p.name}
-            </li>
-          ))}
-        </ul>
-        <div className="flex gap-2 max-w-sm">
-          <Input
-            value={newProjectName}
-            onChange={(e) => setNewProjectName(e.target.value)}
-            placeholder="New project name…"
-            onKeyDown={(e) => e.key === "Enter" && createProject()}
-          />
-          <Button variant="outline" onClick={createProject} className="gap-1.5 shrink-0">
-            <Plus className="h-4 w-4" />
-            Create
-          </Button>
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-2">
+          <div>
+            <p className="text-xs text-muted-foreground">Project ID</p>
+            <p className="text-xs font-mono text-foreground break-all">{project.id}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Created</p>
+            <p className="text-sm text-foreground">
+              {new Date(project.created_at).toLocaleString()}
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* Clear all notes */}
+      {/* Project settings */}
       <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-destructive">Clear all notes</h2>
-        <Separator className="bg-destructive/20" />
-        <p className="text-sm text-muted-foreground">
-          Permanently deletes all notes, tags, and people from{" "}
-          <strong>{activeProject.name}</strong>. The project itself is kept. This cannot be undone.
-        </p>
-        <div className="flex gap-2 items-center max-w-sm">
-          <Input
-            value={clearConfirm}
-            onChange={(e) => setClearConfirm(e.target.value)}
-            placeholder='Type "clear" to confirm'
-            className="border-destructive/40 focus-visible:ring-destructive/40"
-          />
-          <Button
-            variant="destructive"
-            onClick={clearNotes}
-            disabled={clearConfirm !== "clear" || clearing}
-            className="gap-1.5 shrink-0"
-          >
-            <AlertTriangle className="h-4 w-4" />
-            {clearing ? "Clearing…" : "Clear"}
+        <h2 className="text-sm font-semibold">Project settings</h2>
+        <Separator />
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Project name</label>
+            <Input
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+
+          <div className="flex items-center justify-between max-w-sm">
+            <div>
+              <p className="text-sm font-medium">Trigram search</p>
+              <p className="text-xs text-muted-foreground">Enables partial-word matching</p>
+            </div>
+            <Switch checked={trigramSearch} onCheckedChange={setTrigramSearch} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={save} disabled={saving} className="gap-1.5">
+            <Save className="h-4 w-4" />
+            {saving ? "Saving…" : "Save"}
           </Button>
+          {msg && (
+            <span className="text-sm text-muted-foreground flex items-center gap-1">
+              <Check className="h-3.5 w-3.5 text-green-600" />
+              {msg}
+            </span>
+          )}
         </div>
       </section>
 
-      {/* Delete project */}
-      {projects.length > 1 && (
-        <section className="space-y-4">
-          <h2 className="text-sm font-semibold text-destructive">Delete project</h2>
-          <Separator className="bg-destructive/20" />
-          <p className="text-sm text-muted-foreground">
-            Permanently deletes <strong>{activeProject.name}</strong> and all its notes and images.
-            This cannot be undone.
-          </p>
+      {/* Danger zone */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-destructive">Danger zone</h2>
+        <Separator className="bg-destructive/20" />
+
+        <div className="space-y-3 rounded-lg border border-destructive/20 p-4">
+          <div>
+            <p className="text-sm font-medium">Clear all notes</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Permanently deletes all notes, tags, and people from this project. The project itself is kept. This cannot be undone.
+            </p>
+          </div>
           <div className="flex gap-2 items-center max-w-sm">
             <Input
-              value={deleteConfirm}
-              onChange={(e) => setDeleteConfirm(e.target.value)}
-              placeholder='Type "delete" to confirm'
+              value={clearConfirm}
+              onChange={(e) => setClearConfirm(e.target.value)}
+              placeholder='Type "clear" to confirm'
               className="border-destructive/40 focus-visible:ring-destructive/40"
             />
             <Button
               variant="destructive"
-              onClick={deleteProject}
-              disabled={deleteConfirm !== "delete"}
+              onClick={clearNotes}
+              disabled={clearConfirm !== "clear" || clearing}
               className="gap-1.5 shrink-0"
             >
-              <Trash2 className="h-4 w-4" />
-              Delete
+              <AlertTriangle className="h-4 w-4" />
+              {clearing ? "Clearing…" : "Clear"}
             </Button>
           </div>
-        </section>
-      )}
+        </div>
 
-      {/* App info */}
-      <p className="text-xs text-muted-foreground pt-2">Localnotes v2</p>
+        {projects.length > 1 && (
+          <div className="space-y-3 rounded-lg border border-destructive/20 p-4">
+            <div>
+              <p className="text-sm font-medium">Delete project</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Permanently deletes this project and all its notes and images. This cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-2 items-center max-w-sm">
+              <Input
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder='Type "delete" to confirm'
+                className="border-destructive/40 focus-visible:ring-destructive/40"
+              />
+              <Button
+                variant="destructive"
+                onClick={deleteProject}
+                disabled={deleteConfirm !== "delete"}
+                className="gap-1.5 shrink-0"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// ─── Shell ────────────────────────────────────────────────────────────────────
+
+export default function ConfigForm({ projects, activeProject, settings, userEmail, userId }: Props) {
+  const router = useRouter();
+  const [selectedTab, setSelectedTab] = useState<"user" | string>("user");
+  const [newProjectName, setNewProjectName] = useState("");
+
+  const selectedProject = projects.find((p) => p.id === selectedTab);
+
+  async function createProject() {
+    if (!newProjectName.trim()) return;
+    const res = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newProjectName.trim() }),
+    });
+    if (res.ok) {
+      setNewProjectName("");
+      router.refresh();
+    }
+  }
+
+  return (
+    <div className="flex gap-0">
+      {/* ── Sidebar ──────────────────────────────────────────────────── */}
+      <nav className="w-52 shrink-0 border-r border-border pr-3 space-y-1">
+        <button
+          onClick={() => setSelectedTab("user")}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left",
+            selectedTab === "user"
+              ? "bg-primary/10 text-primary font-medium"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+        >
+          <User className="h-4 w-4 shrink-0" />
+          User settings
+        </button>
+
+        <Separator className="!my-3" />
+
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 pb-1">
+          Projects
+        </p>
+
+        {projects.map((p) => (
+          <button
+            key={p.id}
+            onClick={() => setSelectedTab(p.id)}
+            className={cn(
+              "w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left",
+              selectedTab === p.id
+                ? "bg-primary/10 text-primary font-medium"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <FolderOpen className="h-4 w-4 shrink-0" />
+            <span className="truncate">{p.name}</span>
+          </button>
+        ))}
+
+        <div className="!mt-4 space-y-1.5 pt-1">
+          <Input
+            value={newProjectName}
+            onChange={(e) => setNewProjectName(e.target.value)}
+            placeholder="New project…"
+            onKeyDown={(e) => e.key === "Enter" && createProject()}
+            className="h-7 text-xs"
+          />
+          <Button
+            variant="outline"
+            onClick={createProject}
+            className="w-full gap-1.5 h-7 text-xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Create project
+          </Button>
+        </div>
+      </nav>
+
+      {/* ── Content ──────────────────────────────────────────────────── */}
+      <main className="flex-1 pl-8 min-w-0">
+        {selectedTab === "user" ? (
+          <UserSettingsPanel
+            settings={settings}
+            userEmail={userEmail}
+            userId={userId}
+          />
+        ) : selectedProject ? (
+          <ProjectSettingsPanel
+            key={selectedProject.id}
+            project={selectedProject}
+            projects={projects}
+          />
+        ) : null}
+      </main>
     </div>
   );
 }
