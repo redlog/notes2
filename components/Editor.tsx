@@ -656,7 +656,7 @@ export default function Editor({
             onChange={handleBodyChange}
             onKeyDown={handleKeyDown}
             className={cn(
-              "flex-1 p-4 sm:p-6 text-sm resize-none outline-none border-none bg-background leading-relaxed",
+              "flex-1 p-4 sm:p-6 text-base sm:text-sm resize-none outline-none border-none bg-background leading-relaxed",
               fontClass
             )}
             placeholder="Write your note here…"

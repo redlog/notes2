@@ -83,4 +83,11 @@ button, a, input, select, textarea {
   select {
     min-height: 2.75rem;
   }
+
+  /* Prevent iOS Safari auto-zoom on focus (triggered when font-size < 16px) */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 1rem !important;
+  }
 }
