@@ -471,93 +471,142 @@ export default function Editor({
     </div>
   );
 
+  const saveStatusClass = cn(
+    "transition-colors duration-300",
+    saveStatus.startsWith("⚠️") ? "text-destructive"
+      : justSaved ? "text-green-600 font-medium"
+      : "text-muted-foreground"
+  );
+
   return (
     <div className={cn("flex flex-col", focusMode ? "fixed inset-0 z-50 bg-background" : "h-[calc(100vh-3.5rem)]")}>
+
+      {/* ══════════════════════════════════════════════════════════════
+          MOBILE NAV BAR  (phones only — hidden at sm+)
+          iOS-style: Cancel · status · Done  +  full-width title row
+      ══════════════════════════════════════════════════════════════ */}
+      <div className="sm:hidden shrink-0 bg-background border-b border-border">
+        {/* Row 1 — Cancel | save status | Done */}
+        <div className="flex items-center h-12 px-4 gap-3">
+          <a
+            href={`/note/${note.id}`}
+            className="text-primary font-medium text-[15px] shrink-0 min-w-[56px]"
+          >
+            Cancel
+          </a>
+          <span className={cn("flex-1 text-center text-xs truncate", saveStatusClass)}>
+            {saving ? "Saving…" : saveStatus}
+          </span>
+          <button
+            onClick={() => doSave(true)}
+            disabled={saving}
+            className="text-primary font-semibold text-[15px] shrink-0 min-w-[56px] text-right disabled:opacity-40"
+          >
+            Done
+          </button>
+        </div>
+        {/* Row 2 — Title input */}
+        <div className="px-4 pb-3">
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Title"
+            className={cn(
+              "w-full text-[22px] font-bold leading-tight bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40",
+              fontClass
+            )}
+          />
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          DESKTOP TOOLBAR  (sm+ — hidden on phones)
+          Title · save status · font · meta · focus · Save · Save&Close · ✕
+      ══════════════════════════════════════════════════════════════ */}
+      <div className="hidden sm:flex sticky top-0 z-10 bg-background border-b border-border items-center gap-2 px-3 sm:px-4 py-2 shrink-0">
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Note title"
+          className={cn(
+            "flex-1 min-w-0 text-2xl font-bold bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40",
+            fontClass
+          )}
+        />
+
+        <span className={cn("text-xs shrink-0", saveStatusClass)}>
+          {saving ? "Saving…" : saveStatus}
+        </span>
+
+        {/* Font selector */}
+        <Select value={font} onValueChange={(v) => setFont(v as "mono" | "sans" | "serif")}>
+          <SelectTrigger className="h-9 lg:h-7 w-[80px] text-xs border-0 bg-transparent shadow-none focus:ring-0 text-muted-foreground shrink-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="mono">Mono</SelectItem>
+            <SelectItem value="sans">Sans</SelectItem>
+            <SelectItem value="serif">Serif</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Meta panel toggle — tablet only (sm–lg) */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 lg:hidden shrink-0"
+          onClick={() => setMetaOpen(true)}
+          title="Tags, People & Images"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+        </Button>
+
+        {/* Focus mode toggle */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-10 w-10 lg:h-7 lg:w-7 shrink-0"
+          onClick={() => setFocusMode((f) => !f)}
+          title={focusMode ? "Exit focus mode" : "Expand editor"}
+        >
+          {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </Button>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => doSave(false)}
+            disabled={saving}
+            className="h-9 lg:h-7 text-xs gap-1"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {saving ? "Saving…" : "Save"}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => doSave(true)}
+            disabled={saving}
+            className="h-9 lg:h-7 text-xs"
+          >
+            Save & Close
+          </Button>
+          <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-7 lg:w-7" asChild>
+            <a href={`/note/${note.id}`} title="Cancel">
+              <X className="h-4 w-4" />
+            </a>
+          </Button>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          MAIN CONTENT AREA
+      ══════════════════════════════════════════════════════════════ */}
       <div className="flex flex-1 min-h-0">
-        {/* Title + body */}
+        {/* Editor column */}
         <div className="flex-1 flex flex-col min-h-0 relative">
-          {/* Combined sticky title + toolbar */}
-          <div className="sticky top-0 z-10 bg-background border-b border-border flex items-center gap-2 px-3 sm:px-4 py-2">
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Note title"
-              className={cn(
-                "flex-1 min-w-0 text-2xl font-bold bg-transparent outline-none text-foreground placeholder:text-muted-foreground/40",
-                fontClass
-              )}
-            />
-
-            <span className={cn(
-              "text-xs shrink-0 transition-colors duration-300 hidden sm:block",
-              saveStatus.startsWith("⚠️") ? "text-destructive"
-                : justSaved ? "text-green-600 font-medium"
-                : "text-muted-foreground"
-            )}>
-              {saving ? "Saving…" : saveStatus}
-            </span>
-
-            {/* Font selector */}
-            <Select value={font} onValueChange={(v) => setFont(v as "mono" | "sans" | "serif")}>
-              <SelectTrigger className="h-9 lg:h-7 w-[80px] text-xs border-0 bg-transparent shadow-none focus:ring-0 text-muted-foreground shrink-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="mono">Mono</SelectItem>
-                <SelectItem value="sans">Sans</SelectItem>
-                <SelectItem value="serif">Serif</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Meta panel toggle — mobile/tablet only */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10 lg:hidden shrink-0"
-              onClick={() => setMetaOpen(true)}
-              title="Tags, People & Images"
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
-
-            {/* Focus mode toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10 lg:h-7 lg:w-7 shrink-0"
-              onClick={() => setFocusMode((f) => !f)}
-              title={focusMode ? "Exit focus mode" : "Expand editor"}
-            >
-              {focusMode ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => doSave(false)}
-                disabled={saving}
-                className="h-9 lg:h-7 text-xs gap-1"
-              >
-                <Save className="h-3.5 w-3.5" />
-                {saving ? "Saving…" : "Save"}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => doSave(true)}
-                disabled={saving}
-                className="h-9 lg:h-7 text-xs"
-              >
-                Save & Close
-              </Button>
-              <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-7 lg:w-7" asChild>
-                <a href={`/note/${note.id}`} title="Cancel">
-                  <X className="h-4 w-4" />
-                </a>
-              </Button>
-            </div>
-          </div>
           {showNoteSearch && (
             <NoteLinkSearch
               onInsert={insertAtCursor}
@@ -615,11 +664,66 @@ export default function Editor({
           />
         </div>
 
-        {/* Right meta panel — desktop only */}
+        {/* Right meta panel — desktop only (lg+) */}
         <div className="hidden lg:flex w-64 xl:w-72 border-l border-border bg-muted/10 flex-col">
           <ScrollArea className="flex-1">
             {metaPanel}
           </ScrollArea>
+        </div>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          MOBILE BOTTOM TOOLBAR  (phones only — hidden at sm+)
+          Font · Tags · Save · Focus  — icon + label tabs
+      ══════════════════════════════════════════════════════════════ */}
+      <div className="sm:hidden shrink-0 bg-background border-t border-border">
+        <div className="flex items-stretch justify-around">
+          {/* Font selector */}
+          <Select value={font} onValueChange={(v) => setFont(v as "mono" | "sans" | "serif")}>
+            <SelectTrigger className="h-14 w-16 flex-col gap-0.5 border-0 bg-transparent shadow-none focus:ring-0 text-muted-foreground rounded-none px-0">
+              <span className="text-base leading-none">Aa</span>
+              <SelectValue className="text-[10px] leading-none" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mono">Mono</SelectItem>
+              <SelectItem value="sans">Sans</SelectItem>
+              <SelectItem value="serif">Serif</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Tags / Meta */}
+          <button
+            onClick={() => setMetaOpen(true)}
+            className="flex flex-col items-center justify-center gap-1 h-14 flex-1 text-muted-foreground active:bg-muted/50 transition-colors"
+            title="Tags, People & Images"
+          >
+            <SlidersHorizontal className="h-5 w-5" />
+            <span className="text-[10px] leading-none">Tags</span>
+          </button>
+
+          {/* Save */}
+          <button
+            onClick={() => doSave(false)}
+            disabled={saving}
+            className="flex flex-col items-center justify-center gap-1 h-14 flex-1 text-muted-foreground active:bg-muted/50 transition-colors disabled:opacity-40"
+            title="Save"
+          >
+            <Save className="h-5 w-5" />
+            <span className="text-[10px] leading-none">{saving ? "Saving" : "Save"}</span>
+          </button>
+
+          {/* Focus mode */}
+          <button
+            onClick={() => setFocusMode((f) => !f)}
+            className={cn(
+              "flex flex-col items-center justify-center gap-1 h-14 flex-1 transition-colors active:bg-muted/50",
+              focusMode ? "text-primary" : "text-muted-foreground"
+            )}
+            title={focusMode ? "Exit focus mode" : "Focus mode"}
+          >
+            {focusMode ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+            <span className="text-[10px] leading-none">Focus</span>
+          </button>
         </div>
       </div>
 

@@ -100,8 +100,8 @@ export default async function ReadNotePage({
         </Link>
 
         <div className="flex flex-col lg:flex-row gap-6">
-          {/* Note body */}
-          <article className="flex-1 min-w-0 order-2 lg:order-1">
+          {/* Note body — always first in source order so it appears first on mobile */}
+          <article className="flex-1 min-w-0">
             {note.title && (
               <h1 className="text-2xl font-bold text-foreground mb-4">{note.title}</h1>
             )}
@@ -111,12 +111,12 @@ export default async function ReadNotePage({
             />
           </article>
 
-          {/* Right sidebar */}
-          <aside className="w-full lg:w-52 xl:w-56 shrink-0 order-1 lg:order-2">
+          {/* Sidebar — stacks below article on mobile, fixed column on desktop */}
+          <aside className="w-full lg:w-52 xl:w-56 shrink-0">
             <div className="lg:sticky lg:top-20 space-y-5">
               {/* Actions */}
               <div className="flex flex-wrap gap-2">
-                <Button asChild className="gap-1.5">
+                <Button asChild className="gap-1.5 flex-1 sm:flex-none justify-center">
                   <Link href={`/edit/${note.id}`}>
                     <Pencil className="h-3.5 w-3.5" />
                     Edit
