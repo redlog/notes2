@@ -1,9 +1,22 @@
 import { notFound, redirect } from "next/navigation";
+import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
 import { getNote, getTagCounts, getPersonCounts, getSignedImageUrls } from "@/lib/notes";
 import Header from "@/components/Header";
 import Editor from "@/components/Editor";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const supabase = await createClient();
+  const note = await getNote(supabase, Number(id));
+  const title = note?.title?.trim() || "Untitled";
+  return { title: `Editing — ${title}` };
+}
 
 export default async function EditNotePage({
   params,

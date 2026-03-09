@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
@@ -10,6 +11,18 @@ import DeleteButton from "@/components/DeleteButton";
 import MoveNoteButton from "@/components/MoveNoteButton";
 import { Button } from "@/components/ui/button";
 import { Pencil, Copy, ArrowLeft, Clock, Calendar, Link2, History } from "lucide-react";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const supabase = await createClient();
+  const note = await getNote(supabase, Number(id));
+  const title = note?.title?.trim() || "Untitled";
+  return { title };
+}
 
 export default async function ReadNotePage({
   params,
