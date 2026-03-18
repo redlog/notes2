@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import type { TagCount, PersonCount } from "@/lib/types";
-import { Hash, Users, AlignLeft, ArrowUp, ArrowDown, ArrowUpDown, Type } from "lucide-react";
+import { Hash, Users, AlignLeft, ArrowUp, ArrowDown, ArrowUpDown, Type, FileText } from "lucide-react";
 import { Input } from "./ui/input";
 import { cn } from "@/lib/utils";
 
@@ -203,7 +203,7 @@ export default function Sidebar({
         <div className="flex-1 overflow-y-auto min-h-0">
           <ul className="space-y-0.5 pr-1">
             {sortedPeople.map((p) => (
-              <li key={p.person} className="flex items-center justify-between">
+              <li key={p.person} className="flex items-center justify-between group">
                 <Link
                   href={filterHref(`@${p.person}`)}
                   onClick={onNavigate}
@@ -212,7 +212,17 @@ export default function Sidebar({
                   <span className="text-violet-400 mr-0.5">@</span>
                   {p.person}
                 </Link>
-                <span className="text-muted-foreground text-xs tabular-nums ml-1 shrink-0 min-w-[1.5rem] text-right">{p.count}</span>
+                <div className="flex items-center gap-1 shrink-0 ml-1">
+                  <span className="text-muted-foreground text-xs tabular-nums">{p.count}</span>
+                  <Link
+                    href={`/bio/${encodeURIComponent(p.person)}`}
+                    onClick={onNavigate}
+                    title="Bio page"
+                    className="p-1 -mr-1 rounded opacity-60 group-hover:opacity-100 text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
               </li>
             ))}
             {sortedPeople.length === 0 && (
