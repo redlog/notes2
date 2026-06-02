@@ -10,6 +10,7 @@ interface Props {
   projects: Project[];
   activeProject: Project;
   userEmail: string;
+  localMode?: boolean;
   tags: TagCount[];
   people: PersonCount[];
   toolbar?: React.ReactNode;
@@ -20,6 +21,7 @@ export default function AppShell({
   projects,
   activeProject,
   userEmail,
+  localMode,
   tags,
   people,
   toolbar,
@@ -33,6 +35,7 @@ export default function AppShell({
         projects={projects}
         activeProject={activeProject}
         userEmail={userEmail}
+        localMode={localMode}
         onMenuToggle={() => setSidebarOpen(true)}
       />
 

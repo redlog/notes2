@@ -46,6 +46,7 @@ export default async function EditNotePage({
         projects={projects}
         activeProject={activeProject!}
         userEmail={user.email}
+        localMode={process.env.PROVIDER === "sqlite"}
       />
       <Editor
         note={note}
