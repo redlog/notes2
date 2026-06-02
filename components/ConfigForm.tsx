@@ -7,7 +7,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
 import { Separator } from "./ui/separator";
-import { Save, Plus, Trash2, Check, AlertTriangle, User, FolderOpen } from "lucide-react";
+import { Save, Plus, Trash2, Check, AlertTriangle, User, FolderOpen, Download, Upload } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -134,6 +134,126 @@ function UserSettingsPanel({
   );
 }
 
+// ─── Export / Import Panel ────────────────────────────────────────────────────
+
+function ExportImportPanel({ projectId }: { projectId: string }) {
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    imported: number;
+    total: number;
+    errors: string[];
+  } | null>(null);
+  const [importError, setImportError] = useState("");
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    setImporting(true);
+    setImportResult(null);
+    setImportError("");
+
+    try {
+      const text = await file.text();
+      const res = await fetch(`/api/import-json?project=${projectId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: text,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportError(data.error ?? "Import failed");
+      } else {
+        setImportResult(data);
+      }
+    } catch {
+      setImportError("Failed to read or upload file.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-sm font-semibold">Export / Import</h2>
+      <Separator />
+
+      <div className="space-y-4">
+        {/* Export */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Export notes</p>
+          <p className="text-xs text-muted-foreground">
+            Download all notes as a JSON file, including images (base64-encoded).
+          </p>
+          <Button variant="outline" className="gap-1.5" asChild>
+            <a href={`/api/export-json?project=${projectId}`} download>
+              <Download className="h-4 w-4" />
+              Download JSON
+            </a>
+          </Button>
+        </div>
+
+        {/* Import */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Import notes</p>
+          <p className="text-xs text-muted-foreground">
+            Import notes from a Localnotes JSON export. Notes are added to this project; existing notes are not affected. Original timestamps are preserved.
+          </p>
+          <label className="inline-block">
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              disabled={importing}
+              asChild
+            >
+              <span>
+                <Upload className="h-4 w-4" />
+                {importing ? "Importing…" : "Choose JSON file…"}
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="sr-only"
+                  onChange={handleImport}
+                  disabled={importing}
+                />
+              </span>
+            </Button>
+          </label>
+
+          {importResult && (
+            <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm space-y-1">
+              <p className="flex items-center gap-1.5 text-green-700 dark:text-green-400 font-medium">
+                <Check className="h-3.5 w-3.5" />
+                Imported {importResult.imported} of {importResult.total} notes
+              </p>
+              {importResult.errors.length > 0 && (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">
+                    {importResult.errors.length} error{importResult.errors.length !== 1 ? "s" : ""}
+                  </summary>
+                  <ul className="mt-1 space-y-0.5 list-disc list-inside">
+                    {importResult.errors.map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+
+          {importError && (
+            <p className="text-sm text-destructive flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {importError}
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Project Settings Panel ───────────────────────────────────────────────────
 
 function ProjectSettingsPanel({
@@ -256,6 +376,9 @@ function ProjectSettingsPanel({
           )}
         </div>
       </section>
+
+      {/* Export / Import */}
+      <ExportImportPanel projectId={project.id} />
 
       {/* Danger zone */}
       <section className="space-y-4">
