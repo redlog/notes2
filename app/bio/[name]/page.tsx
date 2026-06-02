@@ -38,6 +38,7 @@ export default async function BioPage({
         projects={projects}
         activeProject={activeProject}
         userEmail={user.email}
+        localMode={process.env.PROVIDER === "sqlite"}
       />
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
         <Link

@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
 import { Menu, Plus, Settings, LogOut, ChevronDown, User, LayoutGrid } from "lucide-react";
@@ -21,14 +20,16 @@ interface Props {
   projects: Project[];
   activeProject: Project;
   userEmail: string;
+  localMode?: boolean;
   onMenuToggle?: () => void;
 }
 
-export default function Header({ projects, activeProject, userEmail, onMenuToggle }: Props) {
+export default function Header({ projects, activeProject, userEmail, localMode, onMenuToggle }: Props) {
   const router = useRouter();
-  const supabase = createClient();
 
   async function signOut() {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
     router.refresh();
@@ -146,14 +147,18 @@ export default function Header({ projects, activeProject, userEmail, onMenuToggl
                 Settings
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={signOut}
-              className="cursor-pointer text-destructive focus:text-destructive flex items-center gap-2"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </DropdownMenuItem>
+            {!localMode && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={signOut}
+                  className="cursor-pointer text-destructive focus:text-destructive flex items-center gap-2"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

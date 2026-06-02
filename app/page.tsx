@@ -103,6 +103,7 @@ export default async function HomePage({
       projects={projects}
       activeProject={activeProject}
       userEmail={user.email}
+      localMode={process.env.PROVIDER === "sqlite"}
       tags={tagCounts}
       people={peopleCounts}
       toolbar={<SearchBar earliestDate={earliestDate ?? ""} />}

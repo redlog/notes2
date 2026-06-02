@@ -42,6 +42,7 @@ export default async function NoteVersionPage({
         projects={projects}
         activeProject={activeProject!}
         userEmail={user.email}
+        localMode={process.env.PROVIDER === "sqlite"}
       />
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
