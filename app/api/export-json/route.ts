@@ -45,9 +45,17 @@ export async function GET(request: Request) {
     });
   }
 
+  const exportedAt = new Date().toISOString();
+  const exportTag =
+    "export" + exportedAt.slice(0, 10).replace(/-/g, ""); // export20250602
+
+  for (const note of notes) {
+    if (!note.tags.includes(exportTag)) note.tags.push(exportTag);
+  }
+
   const exportData = {
     version: 1,
-    exported_at: new Date().toISOString(),
+    exported_at: exportedAt,
     project_name: project.name,
     notes,
   };
