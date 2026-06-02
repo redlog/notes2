@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 import { extractNoteRefs } from "@/lib/notes";
 import { renderMarkdown } from "@/lib/markdown";
@@ -6,8 +6,7 @@ import type { SortKey, SortOrder } from "@/lib/types";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const projectId = searchParams.get("project") ?? "";
@@ -23,7 +22,6 @@ export async function GET(request: Request) {
   const project = await provider.projects.getActive(user.id, projectId || undefined);
   if (!project) return new Response("Not found", { status: 404 });
 
-  // Fetch all matching notes (no pagination limit for export)
   const result = await provider.notes.list({
     projectId: project.id,
     search,
@@ -36,7 +34,6 @@ export async function GET(request: Request) {
     timeMax,
   });
 
-  // Render each note
   const rendered: { id: number; title: string; created_at: string; html: string }[] = [];
   for (const item of result.notes) {
     const note = await provider.notes.get(item.id);

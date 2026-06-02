@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 
-const MAX_BODY_BYTES = 500_000; // 500 KB plain-text limit
+const MAX_BODY_BYTES = 500_000;
 const MAX_TAGS = 200;
 const MAX_TAG_LENGTH = 200;
 const MAX_PEOPLE = 200;
@@ -18,13 +18,11 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid note ID" }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const provider = await getProvider();
 
-  // Explicit ownership check (defense-in-depth alongside RLS)
   const ownerId = await provider.notes.checkOwner(noteId);
   if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -32,7 +30,6 @@ export async function PUT(
 
   const { title, body, tags, people, version } = await request.json();
 
-  // Input validation
   if (typeof title !== "string" || title.length > 500) {
     return NextResponse.json({ error: "Invalid title" }, { status: 400 });
   }
@@ -72,8 +69,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid note ID" }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { project_id } = await request.json();
@@ -83,13 +79,11 @@ export async function PATCH(
 
   const provider = await getProvider();
 
-  // Check note ownership
   const noteOwnerId = await provider.notes.checkOwner(noteId);
   if (!noteOwnerId || noteOwnerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Check target project belongs to user
   const projectOwnerId = await provider.projects.checkOwner(project_id);
   if (!projectOwnerId || projectOwnerId !== user.id) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -109,8 +103,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid note ID" }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const provider = await getProvider();

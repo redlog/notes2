@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getActiveProject, getUserProjects } from "@/lib/projects";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 import Header from "@/components/Header";
 import BioEditor from "@/components/BioEditor";
 import { ArrowLeft } from "lucide-react";
@@ -17,21 +17,19 @@ export default async function BioPage({
   const sp = await searchParams;
   const person = decodeURIComponent(name);
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  const [projects] = await Promise.all([getUserProjects(supabase, user.id)]);
-  const activeProject = await getActiveProject(supabase, user.id, sp.project);
+  const provider = await getProvider();
+
+  const [projects, activeProject] = await Promise.all([
+    provider.projects.getUserProjects(user.id),
+    provider.projects.getActive(user.id, sp.project),
+  ]);
+
   if (!activeProject) redirect("/");
 
-  const { data: bioData } = await supabase
-    .from("person_bios")
-    .select("content, updated_at")
-    .eq("project_id", activeProject.id)
-    .eq("person", person)
-    .single();
-
+  const bioData = await provider.bios.get(activeProject.id, person);
   const backHref = sp.project ? `/?project=${encodeURIComponent(sp.project)}` : "/";
 
   return (
@@ -39,7 +37,7 @@ export default async function BioPage({
       <Header
         projects={projects}
         activeProject={activeProject}
-        userEmail={user.email ?? ""}
+        userEmail={user.email}
       />
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
         <Link
@@ -59,8 +57,8 @@ export default async function BioPage({
 
         <BioEditor
           person={person}
-          initialContent={bioData?.content ?? ""}
-          initialUpdatedAt={bioData?.updated_at ?? null}
+          initialContent={bioData.content}
+          initialUpdatedAt={bioData.updated_at}
           projectParam={sp.project}
         />
       </div>

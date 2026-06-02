@@ -1,8 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getNote, getNoteVersions } from "@/lib/notes";
-import { getUserProjects, getActiveProject } from "@/lib/projects";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 import Header from "@/components/Header";
 import HistoryDiffView from "./HistoryDiffView";
 import { ArrowLeft } from "lucide-react";
@@ -16,28 +15,27 @@ export default async function NoteHistoryPage({
   const noteId = Number(id);
   if (isNaN(noteId)) notFound();
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
+  const provider = await getProvider();
+
   const [note, projects, versions] = await Promise.all([
-    getNote(supabase, noteId),
-    getUserProjects(supabase, user.id),
-    getNoteVersions(supabase, noteId),
+    provider.notes.get(noteId),
+    provider.projects.getUserProjects(user.id),
+    provider.notes.getVersions(noteId),
   ]);
 
   if (!note || note.user_id !== user.id) notFound();
 
-  const activeProject = await getActiveProject(supabase, user.id, note.project_id);
+  const activeProject = await provider.projects.getActive(user.id, note.project_id);
 
   return (
     <div className="min-h-screen bg-background">
       <Header
         projects={projects}
         activeProject={activeProject!}
-        userEmail={user.email ?? ""}
+        userEmail={user.email}
       />
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5">

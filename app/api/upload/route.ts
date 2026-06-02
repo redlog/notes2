@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { getSignedImageUrls } from "@/lib/notes";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const form = await request.formData();
@@ -15,20 +14,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing file or noteId" }, { status: 400 });
   }
 
-  // Verify note ownership before reading the file body
-  const { data: note } = await supabase
-    .from("notes")
-    .select("user_id")
-    .eq("id", noteId)
-    .single();
-  if (!note || note.user_id !== user.id) {
+  const provider = await getProvider();
+
+  // Verify note ownership
+  const ownerId = await provider.notes.checkOwner(noteId);
+  if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const buffer = await file.arrayBuffer();
 
-  // Validate by magic bytes — browser-supplied MIME type is not trustworthy.
-  // PNG magic: 89 50 4E 47 0D 0A 1A 0A
+  // Validate PNG by magic bytes
   const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
   const bytes = new Uint8Array(buffer);
   if (
@@ -38,36 +34,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "File is not a valid PNG" }, { status: 400 });
   }
 
-  // Get next image number
-  const { data: existingImages } = await supabase
-    .from("note_images")
-    .select("img_num")
-    .eq("note_id", noteId)
-    .order("img_num", { ascending: false })
-    .limit(1);
-  const nextNum = existingImages?.[0]?.img_num ? existingImages[0].img_num + 1 : 1;
+  const imgNum = await provider.notes.getNextImageNum(noteId);
+  const storagePath = `${noteId}/${imgNum}.png`;
 
-  const storagePath = `${user.id}/${noteId}/${nextNum}.png`;
+  if (process.env.PROVIDER === "sqlite") {
+    // Local filesystem storage
+    const { getLocalImagesDir } = await import("@/lib/local-storage");
+    const { writeFile, mkdir } = await import("fs/promises");
+    const { join } = await import("path");
 
-  const { error: uploadError } = await supabase.storage
-    .from("note-images")
-    .upload(storagePath, buffer, { contentType: "image/png", upsert: false });
+    const imagesDir = getLocalImagesDir();
+    const noteDir = join(imagesDir, String(noteId));
+    await mkdir(noteDir, { recursive: true });
+    await writeFile(join(noteDir, `${imgNum}.png`), Buffer.from(buffer));
+  } else {
+    // Supabase storage (path includes user_id prefix for RLS)
+    const supabaseStoragePath = `${user.id}/${noteId}/${imgNum}.png`;
+    const { createClient } = await import("@/lib/supabase/server");
+    const supabase = await createClient();
+    const { error: uploadError } = await supabase.storage
+      .from("note-images")
+      .upload(supabaseStoragePath, buffer, { contentType: "image/png", upsert: false });
+    if (uploadError) {
+      return NextResponse.json({ error: uploadError.message }, { status: 500 });
+    }
+    // Use the Supabase-namespaced path in the DB record
+    await provider.notes.insertImageRecord(noteId, imgNum, supabaseStoragePath);
 
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
+    const images = await provider.notes.getImageRecords(noteId);
+    const signedUrls = await provider.notes.getSignedImageUrls(images);
+    return NextResponse.json({ ok: true, images, signedUrls });
   }
 
-  await supabase
-    .from("note_images")
-    .insert({ note_id: noteId, img_num: nextNum, storage_path: storagePath });
+  // Local mode: record in DB and return updated list
+  await provider.notes.insertImageRecord(noteId, imgNum, storagePath);
 
-  // Return updated image list with fresh signed URLs
-  const { data: images } = await supabase
-    .from("note_images")
-    .select("img_num, storage_path")
-    .eq("note_id", noteId)
-    .order("img_num");
-
-  const signedUrls = await getSignedImageUrls(supabase, images ?? []);
-  return NextResponse.json({ ok: true, images: images ?? [], signedUrls });
+  const images = await provider.notes.getImageRecords(noteId);
+  const signedUrls = await provider.notes.getSignedImageUrls(images);
+  return NextResponse.json({ ok: true, images, signedUrls });
 }

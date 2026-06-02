@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 
 async function resolveParams(params: Promise<{ id: string; ver: string }>) {
@@ -12,7 +12,6 @@ async function resolveParams(params: Promise<{ id: string; ver: string }>) {
   return { noteId, version };
 }
 
-// GET /api/notes/[id]/versions/[ver] — fetch a specific snapshot
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string; ver: string }> }
@@ -21,8 +20,7 @@ export async function GET(
   if (!resolved) return NextResponse.json({ error: "Invalid params" }, { status: 400 });
   const { noteId, version } = resolved;
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const provider = await getProvider();
@@ -37,7 +35,6 @@ export async function GET(
   return NextResponse.json(snapshot);
 }
 
-// POST /api/notes/[id]/versions/[ver]/restore — restore a snapshot as the current note
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string; ver: string }> }
@@ -46,8 +43,7 @@ export async function POST(
   if (!resolved) return NextResponse.json({ error: "Invalid params" }, { status: 400 });
   const { noteId, version } = resolved;
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const provider = await getProvider();

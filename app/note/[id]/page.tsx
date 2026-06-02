@@ -1,8 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
-import { getNote, getSignedImageUrls, extractMentions } from "@/lib/notes";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
+import { extractMentions, extractNoteRefs } from "@/lib/notes";
 import { renderMarkdown } from "@/lib/markdown";
 import Header from "@/components/Header";
 import TagPill from "@/components/TagPill";
@@ -23,46 +23,31 @@ export default async function ReadNotePage({
   const noteId = Number(id);
   if (isNaN(noteId)) notFound();
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  const [note, projects, settings] = await Promise.all([
-    getNote(supabase, noteId),
-    getUserProjects(supabase, user.id),
-    getUserSettings(supabase, user.id),
+  const provider = await getProvider();
+
+  const [note, projects] = await Promise.all([
+    provider.notes.get(noteId),
+    provider.projects.getUserProjects(user.id),
   ]);
 
   if (!note || note.user_id !== user.id) notFound();
 
-  const activeProject = await getActiveProject(supabase, user.id, sp.project ?? note.project_id);
+  const activeProject = await provider.projects.getActive(
+    user.id,
+    sp.project ?? note.project_id
+  );
 
-  // Resolve note:ID references
-  const NOTE_REF_RE = /note:(\d+)/g;
-  const refIds = [...new Set([...note.body.matchAll(NOTE_REF_RE)].map((m) => Number(m[1])))];
-  const noteRefs = new Map<number, string>();
-  if (refIds.length) {
-    const { data } = await supabase
-      .from("notes")
-      .select("id, title")
-      .in("id", refIds)
-      .eq("user_id", user.id);
-    (data ?? []).forEach((n: { id: number; title: string }) => noteRefs.set(n.id, n.title));
-  }
+  const refIds = extractNoteRefs(note.body);
+  const [noteRefs, signedImageUrls, inlinks] = await Promise.all([
+    provider.notes.getRefTitles(refIds, user.id),
+    provider.notes.getSignedImageUrls(note.images),
+    provider.notes.getInlinks(noteId),
+  ]);
 
-  const signedImageUrls = await getSignedImageUrls(supabase, note.images);
-
-  // Inlinks
-  const { data: inlinkData } = await supabase
-    .from("note_inlinks")
-    .select("source_note_id, notes!source_note_id(id, title)")
-    .eq("target_note_id", noteId);
-  const inlinks = ((inlinkData ?? []) as unknown) as Array<{ source_note_id: number; notes: { id: number; title: string } }>;
-
-  const html = renderMarkdown(note.body, {
-    noteRefs,
-    imageUrls: signedImageUrls,
-  });
+  const html = renderMarkdown(note.body, { noteRefs, imageUrls: signedImageUrls });
 
   function fmt(iso: string) {
     return new Date(iso).toLocaleString(undefined, {
@@ -79,14 +64,12 @@ export default async function ReadNotePage({
   const mentionTags = bodyTagNames.filter((t) => !headerTagNames.has(t)).map((t) => ({ tag: t }));
   const mentionPeople = bodyPeopleNames.filter((p) => !headerPeopleNames.has(p)).map((p) => ({ person: p }));
 
-  void settings;
-
   return (
     <div className="min-h-screen bg-background">
       <Header
         projects={projects}
         activeProject={activeProject!}
-        userEmail={user.email ?? ""}
+        userEmail={user.email}
       />
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
@@ -100,7 +83,7 @@ export default async function ReadNotePage({
         </Link>
 
         <div className="flex flex-col lg:flex-row gap-6">
-          {/* Note body — always first in source order so it appears first on mobile */}
+          {/* Note body */}
           <article className="flex-1 min-w-0">
             {note.title && (
               <h1 className="text-2xl font-bold text-foreground mb-4">{note.title}</h1>
@@ -111,7 +94,7 @@ export default async function ReadNotePage({
             />
           </article>
 
-          {/* Sidebar — stacks below article on mobile, fixed column on desktop */}
+          {/* Sidebar */}
           <aside className="w-full lg:w-52 xl:w-56 shrink-0">
             <div className="lg:sticky lg:top-20 space-y-5">
               {/* Actions */}
@@ -219,7 +202,7 @@ export default async function ReadNotePage({
                           href={`/note/${il.source_note_id}`}
                           className="text-xs text-primary hover:underline"
                         >
-                          {il.notes.title}
+                          {il.note_title}
                         </Link>
                       </li>
                     ))}

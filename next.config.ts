@@ -42,6 +42,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Don't bundle native modules — they must be available as Node.js externals
+  serverExternalPackages: ["better-sqlite3"],
+
   async headers() {
     return [
       {
