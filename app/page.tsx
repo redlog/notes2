@@ -174,7 +174,6 @@ export default async function HomePage({
                 currentSearch={search}
                 currentFilter={filter}
                 showScore={!!(search && sortKey === "relevance")}
-                showUpdated={sortKey === "updated_at"}
                 showPreview={showPreview}
               />
             ))
