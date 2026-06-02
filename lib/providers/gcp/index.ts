@@ -485,6 +485,95 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
       for (const row of rows) map.set(row.id as number, row.title as string);
       return map;
     },
+
+    async listImages(projectId, page = 1, perPage = 24) {
+      const offset = (page - 1) * perPage;
+      const { rows: countRows } = await db.query(
+        `SELECT COUNT(*) AS cnt FROM note_images ni JOIN notes n ON n.id = ni.note_id WHERE n.project_id = $1`,
+        [projectId]
+      );
+      const total = Number(countRows[0]?.cnt ?? 0);
+      const { rows } = await db.query(
+        `SELECT ni.note_id, ni.img_num, ni.storage_path,
+                n.title AS note_title, n.created_at AS note_created_at
+         FROM note_images ni
+         JOIN notes n ON n.id = ni.note_id
+         WHERE n.project_id = $1
+         ORDER BY ni.note_id DESC, ni.img_num ASC
+         LIMIT $2 OFFSET $3`,
+        [projectId, perPage, offset]
+      );
+      const bkt = storage.bucket(getGcsBucket());
+      const images = await Promise.all(
+        (rows as { note_id: number; img_num: number; storage_path: string; note_title: string; note_created_at: Date | string }[]).map(async (r) => {
+          const [url] = await bkt.file(r.storage_path).getSignedUrl({
+            action: "read",
+            expires: Date.now() + 3600 * 1000,
+          });
+          return {
+            note_id: r.note_id,
+            note_title: r.note_title,
+            note_created_at:
+              r.note_created_at instanceof Date
+                ? r.note_created_at.toISOString()
+                : r.note_created_at,
+            img_num: r.img_num,
+            storage_path: r.storage_path,
+            signed_url: url,
+          };
+        })
+      );
+      return { images, total, page, perPage };
+    },
+
+    async getInlinks(noteId) {
+      const { rows } = await db.query(
+        `SELECT ni.source_note_id, n.title AS note_title
+         FROM note_inlinks ni
+         JOIN notes n ON n.id = ni.source_note_id
+         WHERE ni.target_note_id = $1`,
+        [noteId]
+      );
+      return rows as { source_note_id: number; note_title: string }[];
+    },
+
+    async getImageRecords(noteId) {
+      const { rows } = await db.query(
+        "SELECT img_num, storage_path FROM note_images WHERE note_id = $1 ORDER BY img_num",
+        [noteId]
+      );
+      return rows as { img_num: number; storage_path: string }[];
+    },
+
+    async getImageRecord(noteId, imgNum) {
+      const { rows } = await db.query(
+        "SELECT storage_path FROM note_images WHERE note_id = $1 AND img_num = $2",
+        [noteId, imgNum]
+      );
+      return (rows[0] as { storage_path: string } | undefined) ?? null;
+    },
+
+    async getNextImageNum(noteId) {
+      const { rows } = await db.query(
+        "SELECT MAX(img_num) AS max_num FROM note_images WHERE note_id = $1",
+        [noteId]
+      );
+      return ((rows[0] as { max_num: number | null })?.max_num ?? 0) + 1;
+    },
+
+    async insertImageRecord(noteId, imgNum, storagePath) {
+      await db.query(
+        "INSERT INTO note_images (note_id, img_num, storage_path) VALUES ($1, $2, $3)",
+        [noteId, imgNum, storagePath]
+      );
+    },
+
+    async deleteImageRecord(noteId, imgNum) {
+      await db.query(
+        "DELETE FROM note_images WHERE note_id = $1 AND img_num = $2",
+        [noteId, imgNum]
+      );
+    },
   };
 }
 
@@ -579,11 +668,41 @@ function buildProjectsProvider(db: Pool): ProjectsDataProvider {
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
+function buildBiosProvider(db: Pool): import("../types").BiosDataProvider {
+  return {
+    async get(projectId, person) {
+      const { rows } = await db.query(
+        "SELECT content, updated_at FROM person_bios WHERE project_id = $1 AND person = $2",
+        [projectId, person]
+      );
+      const r = rows[0] as { content: string; updated_at: Date | string } | undefined;
+      if (!r) return { content: "", updated_at: null };
+      const ua =
+        r.updated_at instanceof Date ? r.updated_at.toISOString() : r.updated_at;
+      return { content: r.content, updated_at: ua };
+    },
+
+    async save(projectId, userId, person, content) {
+      const now = new Date().toISOString();
+      await db.query(
+        `INSERT INTO person_bios (project_id, user_id, person, content, updated_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (project_id, person)
+         DO UPDATE SET content = EXCLUDED.content, updated_at = EXCLUDED.updated_at`,
+        [projectId, userId, person, content, now]
+      );
+      return { updated_at: now };
+    },
+  };
+}
+
 export function createGcpProvider(): DataProvider {
   const db = getPool();
   const storage = new Storage();
+
   return {
     notes: buildNotesProvider(db, storage),
     projects: buildProjectsProvider(db),
+    bios: buildBiosProvider(db),
   };
 }

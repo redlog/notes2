@@ -1,15 +1,19 @@
 /**
  * Provider interfaces for data operations.
- * Auth and file storage are handled separately (not part of this abstraction).
+ * Auth is handled separately via lib/auth.ts.
  *
- * The Supabase implementation lives in ./supabase/index.ts.
- * A future GCP implementation would live in ./gcp/index.ts.
+ * Implementations:
+ *   supabase  — Vercel + Supabase (default)
+ *   gcp       — Cloud Run + Cloud SQL + GCS
+ *   sqlite    — local-only, no auth, file-based image storage
  */
 
 import type {
   ListParams,
   ListResult,
   Note,
+  NoteImage,
+  GalleryImage,
   TagCount,
   PersonCount,
   Project,
@@ -37,9 +41,7 @@ export interface NotesDataProvider {
     version: number
   ): Promise<SaveNoteResponse>;
   delete(noteId: number): Promise<void>;
-  /** Returns the owner user_id, or null if the note doesn't exist. */
   checkOwner(noteId: number): Promise<string | null>;
-  /** Moves a note to a different project (no ownership check — caller must verify). */
   moveToProject(noteId: number, projectId: string): Promise<void>;
   getVersions(
     noteId: number
@@ -69,8 +71,24 @@ export interface NotesDataProvider {
     lines: { noteId: number; noteTitle: string; noteCreatedAt: string; line: string }[];
     total: number;
   }>;
-  /** Fetches id→title pairs for a set of note IDs, scoped to a user. */
   getRefTitles(ids: number[], userId: string): Promise<Map<number, string>>;
+
+  // Image gallery
+  listImages(
+    projectId: string,
+    page?: number,
+    perPage?: number
+  ): Promise<{ images: GalleryImage[]; total: number; page: number; perPage: number }>;
+
+  // Inlinks (used by note view page)
+  getInlinks(noteId: number): Promise<{ source_note_id: number; note_title: string }[]>;
+
+  // Raw image record operations (used by upload/delete API routes)
+  getImageRecords(noteId: number): Promise<NoteImage[]>;
+  getImageRecord(noteId: number, imgNum: number): Promise<{ storage_path: string } | null>;
+  getNextImageNum(noteId: number): Promise<number>;
+  insertImageRecord(noteId: number, imgNum: number, storagePath: string): Promise<void>;
+  deleteImageRecord(noteId: number, imgNum: number): Promise<void>;
 }
 
 export interface ProjectsDataProvider {
@@ -83,14 +101,26 @@ export interface ProjectsDataProvider {
     updates: Partial<Pick<Project, "name" | "trigram_search">>
   ): Promise<void>;
   delete(projectId: string): Promise<void>;
-  /** Returns the owner user_id, or null if the project doesn't exist. */
   checkOwner(projectId: string): Promise<string | null>;
   updateSettings(userId: string, updates: Partial<UserSettings>): Promise<void>;
-  /** Deletes all notes (and their tags, people, images) from a project. */
   clearNotes(projectId: string): Promise<void>;
+}
+
+export interface BiosDataProvider {
+  get(
+    projectId: string,
+    person: string
+  ): Promise<{ content: string; updated_at: string | null }>;
+  save(
+    projectId: string,
+    userId: string,
+    person: string,
+    content: string
+  ): Promise<{ updated_at: string }>;
 }
 
 export interface DataProvider {
   notes: NotesDataProvider;
   projects: ProjectsDataProvider;
+  bios: BiosDataProvider;
 }

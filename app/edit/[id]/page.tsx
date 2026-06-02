@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
-import { getNote, getTagCounts, getPersonCounts, getSignedImageUrls } from "@/lib/notes";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 import Header from "@/components/Header";
 import Editor from "@/components/Editor";
 
@@ -17,28 +16,28 @@ export default async function EditNotePage({
   const noteId = Number(id);
   if (isNaN(noteId)) notFound();
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
+  const provider = await getProvider();
+
   const [note, projects, settings] = await Promise.all([
-    getNote(supabase, noteId),
-    getUserProjects(supabase, user.id),
-    getUserSettings(supabase, user.id),
+    provider.notes.get(noteId),
+    provider.projects.getUserProjects(user.id),
+    provider.projects.getUserSettings(user.id),
   ]);
 
   if (!note || note.user_id !== user.id) notFound();
 
-  const activeProject = await getActiveProject(
-    supabase,
+  const activeProject = await provider.projects.getActive(
     user.id,
     sp.project ?? note.project_id
   );
 
   const [tagCounts, peopleCounts, initialSignedUrls] = await Promise.all([
-    getTagCounts(supabase, activeProject!.id),
-    getPersonCounts(supabase, activeProject!.id),
-    getSignedImageUrls(supabase, note.images),
+    provider.notes.getTagCounts(activeProject!.id),
+    provider.notes.getPersonCounts(activeProject!.id),
+    provider.notes.getSignedImageUrls(note.images),
   ]);
 
   return (
@@ -46,7 +45,7 @@ export default async function EditNotePage({
       <Header
         projects={projects}
         activeProject={activeProject!}
-        userEmail={user.email ?? ""}
+        userEmail={user.email}
       />
       <Editor
         note={note}

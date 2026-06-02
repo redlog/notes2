@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
-import { listProjectImages, getTagCounts, getPersonCounts } from "@/lib/notes";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 import AppShell from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
@@ -13,25 +12,27 @@ export default async function ImagesPage({
   searchParams: Promise<{ project?: string; pg?: string }>;
 }) {
   const sp = await searchParams;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  const [projects, settings] = await Promise.all([
-    getUserProjects(supabase, user.id),
-    getUserSettings(supabase, user.id),
-  ]);
+  const provider = await getProvider();
 
-  const activeProject = await getActiveProject(supabase, user.id, sp.project);
+  const [projects, settings] = await Promise.all([
+    provider.projects.getUserProjects(user.id),
+    provider.projects.getUserSettings(user.id),
+  ]);
+  void settings;
+
+  const activeProject = await provider.projects.getActive(user.id, sp.project);
   if (!activeProject) redirect("/");
 
   const page = Math.max(1, Number(sp.pg ?? 1));
   const perPage = 24;
 
   const [galleryResult, tagCounts, peopleCounts] = await Promise.all([
-    listProjectImages(supabase, activeProject.id, page, perPage),
-    getTagCounts(supabase, activeProject.id),
-    getPersonCounts(supabase, activeProject.id),
+    provider.notes.listImages(activeProject.id, page, perPage),
+    provider.notes.getTagCounts(activeProject.id),
+    provider.notes.getPersonCounts(activeProject.id),
   ]);
 
   const { images, total } = galleryResult;
@@ -51,7 +52,7 @@ export default async function ImagesPage({
     <AppShell
       projects={projects}
       activeProject={activeProject}
-      userEmail={user.email ?? ""}
+      userEmail={user.email}
       tags={tagCounts}
       people={peopleCounts}
     >
@@ -101,7 +102,6 @@ export default async function ImagesPage({
                     <ImageIcon className="h-6 w-6 text-muted-foreground/30" />
                   </div>
                 )}
-                {/* Hover overlay with note title */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <p className="text-white text-xs truncate leading-tight drop-shadow">

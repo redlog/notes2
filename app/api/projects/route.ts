@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 
-// POST /api/projects — create a new project
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { name } = await request.json();
@@ -16,10 +14,8 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, project });
 }
 
-// PATCH /api/projects — update project or user settings
 export async function PATCH(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await request.json();
@@ -39,10 +35,8 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-// DELETE /api/projects — delete a project
 export async function DELETE(request: Request) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { projectId } = await request.json();
@@ -50,7 +44,6 @@ export async function DELETE(request: Request) {
 
   const provider = await getProvider();
 
-  // Verify ownership
   const ownerId = await provider.projects.checkOwner(projectId);
   if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

@@ -1,8 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getNote, getNoteVersion } from "@/lib/notes";
-import { getUserProjects, getActiveProject } from "@/lib/projects";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 import { renderMarkdown } from "@/lib/markdown";
 import Header from "@/components/Header";
 import RestoreButton from "./RestoreButton";
@@ -19,23 +18,22 @@ export default async function NoteVersionPage({
   const version = Number(ver);
   if (isNaN(noteId) || isNaN(version)) notFound();
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
+  const provider = await getProvider();
+
   const [note, projects, snapshot] = await Promise.all([
-    getNote(supabase, noteId),
-    getUserProjects(supabase, user.id),
-    getNoteVersion(supabase, noteId, version),
+    provider.notes.get(noteId),
+    provider.projects.getUserProjects(user.id),
+    provider.notes.getVersion(noteId, version),
   ]);
 
   if (!note || note.user_id !== user.id) notFound();
   if (!snapshot) notFound();
 
-  const activeProject = await getActiveProject(supabase, user.id, note.project_id);
-
+  const activeProject = await provider.projects.getActive(user.id, note.project_id);
   const html = renderMarkdown(snapshot.body, { noteRefs: new Map(), imageUrls: {} });
-
   const isCurrent = note.version === version;
 
   return (
@@ -43,7 +41,7 @@ export default async function NoteVersionPage({
       <Header
         projects={projects}
         activeProject={activeProject!}
-        userEmail={user.email ?? ""}
+        userEmail={user.email}
       />
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">

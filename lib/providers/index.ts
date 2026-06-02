@@ -5,9 +5,11 @@
  * appropriate DataProvider implementation.
  *
  * Supported values:
- *   supabase  — Vercel + Supabase (current default, no env var needed)
+ *   supabase  — Vercel + Supabase (default, no env var needed)
  *   gcp       — Cloud Run + Cloud SQL + GCS
- *               Required extra env vars: DATABASE_URL, GCS_BUCKET
+ *               Required env vars: DATABASE_URL, GCS_BUCKET
+ *   sqlite    — local-only, no auth
+ *               Optional env vars: SQLITE_DB_PATH, LOCAL_IMAGES_DIR
  */
 
 import type { DataProvider } from "./types";
@@ -16,6 +18,7 @@ export type { DataProvider } from "./types";
 export type {
   NotesDataProvider,
   ProjectsDataProvider,
+  BiosDataProvider,
 } from "./types";
 
 export async function getProvider(): Promise<DataProvider> {
@@ -31,7 +34,12 @@ export async function getProvider(): Promise<DataProvider> {
     return createGcpProvider();
   }
 
+  if (provider === "sqlite") {
+    const { createSqliteProvider } = await import("./sqlite");
+    return createSqliteProvider();
+  }
+
   throw new Error(
-    `Unknown PROVIDER "${provider}". Supported values: supabase, gcp`
+    `Unknown PROVIDER "${provider}". Supported values: supabase, gcp, sqlite`
   );
 }

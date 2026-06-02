@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { getActiveProject } from "@/lib/projects";
-import { createNote } from "@/lib/notes";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 
 export default async function NewNotePage({
   searchParams,
@@ -9,13 +8,14 @@ export default async function NewNotePage({
   searchParams: Promise<{ project?: string }>;
 }) {
   const sp = await searchParams;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  const activeProject = await getActiveProject(supabase, user.id, sp.project);
+  const provider = await getProvider();
+
+  const activeProject = await provider.projects.getActive(user.id, sp.project);
   if (!activeProject) redirect("/");
 
-  const noteId = await createNote(supabase, activeProject.id, user.id);
+  const noteId = await provider.notes.create(activeProject.id, user.id);
   redirect(`/edit/${noteId}`);
 }

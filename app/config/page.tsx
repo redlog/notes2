@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 import Header from "@/components/Header";
 import ConfigForm from "@/components/ConfigForm";
 import { ArrowLeft } from "lucide-react";
@@ -12,16 +12,17 @@ export default async function ConfigPage({
   searchParams: Promise<{ project?: string }>;
 }) {
   const sp = await searchParams;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
+  const provider = await getProvider();
+
   const [projects, settings] = await Promise.all([
-    getUserProjects(supabase, user.id),
-    getUserSettings(supabase, user.id),
+    provider.projects.getUserProjects(user.id),
+    provider.projects.getUserSettings(user.id),
   ]);
 
-  const activeProject = await getActiveProject(supabase, user.id, sp.project);
+  const activeProject = await provider.projects.getActive(user.id, sp.project);
   if (!activeProject) redirect("/");
 
   return (
@@ -29,7 +30,7 @@ export default async function ConfigPage({
       <Header
         projects={projects}
         activeProject={activeProject}
-        userEmail={user.email ?? ""}
+        userEmail={user.email}
       />
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
         <div className="mb-6">
@@ -46,7 +47,7 @@ export default async function ConfigPage({
           projects={projects}
           activeProject={activeProject}
           settings={settings}
-          userEmail={user.email ?? ""}
+          userEmail={user.email}
           userId={user.id}
         />
       </div>

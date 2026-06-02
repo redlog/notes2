@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getActiveProject, getUserProjects, getUserSettings } from "@/lib/projects";
-import { listNotes, getTagCounts, getPersonCounts, getEarliestNoteDate } from "@/lib/notes";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 import AppShell from "@/components/AppShell";
 import SearchBar from "@/components/SearchBar";
 import NoteRow from "@/components/NoteRow";
@@ -30,16 +29,17 @@ export default async function HomePage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
+  const provider = await getProvider();
+
   const [projects, settings] = await Promise.all([
-    getUserProjects(supabase, user.id),
-    getUserSettings(supabase, user.id),
+    provider.projects.getUserProjects(user.id),
+    provider.projects.getUserSettings(user.id),
   ]);
 
-  const activeProject = await getActiveProject(supabase, user.id, sp.project);
+  const activeProject = await provider.projects.getActive(user.id, sp.project);
   if (!activeProject) redirect("/config");
 
   const search = sp.search ?? "";
@@ -53,7 +53,7 @@ export default async function HomePage({
   const timeMax = sp.time_max;
 
   const [listResult, tagCounts, peopleCounts, earliestDate] = await Promise.all([
-    listNotes(supabase, {
+    provider.notes.list({
       projectId: activeProject.id,
       search,
       filter,
@@ -64,14 +64,16 @@ export default async function HomePage({
       timeMin,
       timeMax,
     }),
-    getTagCounts(supabase, activeProject.id),
-    getPersonCounts(supabase, activeProject.id),
-    getEarliestNoteDate(supabase, activeProject.id),
+    provider.notes.getTagCounts(activeProject.id),
+    provider.notes.getPersonCounts(activeProject.id),
+    provider.notes.getEarliestNoteDate(activeProject.id),
   ]);
 
   const today = new Date().toISOString().split("T")[0];
   const defaultMin = timeMin ?? earliestDate ?? "";
   const defaultMax = timeMax ?? today;
+  void defaultMin;
+  void defaultMax;
 
   const { notes, total } = listResult;
   const totalPages = Math.ceil(total / perPage);
@@ -100,7 +102,7 @@ export default async function HomePage({
     <AppShell
       projects={projects}
       activeProject={activeProject}
-      userEmail={user.email ?? ""}
+      userEmail={user.email}
       tags={tagCounts}
       people={peopleCounts}
       toolbar={<SearchBar earliestDate={earliestDate ?? ""} />}

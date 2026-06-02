@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 
 export async function GET(
@@ -12,13 +12,11 @@ export async function GET(
     return NextResponse.json({ error: "Invalid note ID" }, { status: 400 });
   }
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const provider = await getProvider();
 
-  // Ownership check
   const ownerId = await provider.notes.checkOwner(noteId);
   if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

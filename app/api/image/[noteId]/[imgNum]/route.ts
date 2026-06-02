@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
-import { getSignedImageUrls } from "@/lib/notes";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 
 export async function DELETE(
   _request: Request,
@@ -10,42 +10,34 @@ export async function DELETE(
   const noteId = Number(noteIdStr);
   const imgNum = Number(imgNumStr);
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Verify ownership via note
-  const { data: note } = await supabase
-    .from("notes")
-    .select("user_id")
-    .eq("id", noteId)
-    .single();
-  if (!note || note.user_id !== user.id) {
+  const provider = await getProvider();
+
+  const ownerId = await provider.notes.checkOwner(noteId);
+  if (!ownerId || ownerId !== user.id) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { data: img } = await supabase
-    .from("note_images")
-    .select("storage_path")
-    .eq("note_id", noteId)
-    .eq("img_num", imgNum)
-    .single();
+  const img = await provider.notes.getImageRecord(noteId, imgNum);
 
   if (img) {
-    await supabase.storage.from("note-images").remove([img.storage_path]);
-    await supabase
-      .from("note_images")
-      .delete()
-      .eq("note_id", noteId)
-      .eq("img_num", imgNum);
+    if (process.env.PROVIDER === "sqlite") {
+      const { getLocalImagesDir } = await import("@/lib/local-storage");
+      const { unlink } = await import("fs/promises");
+      const { join } = await import("path");
+      const filePath = join(getLocalImagesDir(), img.storage_path);
+      await unlink(filePath).catch(() => {});
+    } else {
+      const { createClient } = await import("@/lib/supabase/server");
+      const supabase = await createClient();
+      await supabase.storage.from("note-images").remove([img.storage_path]);
+    }
+    await provider.notes.deleteImageRecord(noteId, imgNum);
   }
 
-  const { data: images } = await supabase
-    .from("note_images")
-    .select("img_num, storage_path")
-    .eq("note_id", noteId)
-    .order("img_num");
-
-  const signedUrls = await getSignedImageUrls(supabase, images ?? []);
-  return NextResponse.json({ ok: true, images: images ?? [], signedUrls });
+  const images = await provider.notes.getImageRecords(noteId);
+  const signedUrls = await provider.notes.getSignedImageUrls(images);
+  return NextResponse.json({ ok: true, images, signedUrls });
 }

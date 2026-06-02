@@ -44,7 +44,7 @@ export function extractTitle(body: string): string {
 
 // ── Body preview ──────────────────────────────────────────────────────────────
 
-function buildPreview(body: string): string {
+export function buildPreview(body: string): string {
   return body
     .split("\n")
     .filter((line) => !line.match(/^#{1,6}\s/))   // drop headings

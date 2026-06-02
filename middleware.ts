@@ -2,6 +2,30 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // SQLite / local mode: no auth needed
+  if (process.env.PROVIDER === "sqlite") {
+    // Keep /login from rendering by redirecting to home
+    if (pathname === "/login") {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+    // Persist active project cookie exactly as in Supabase mode
+    const projectId = request.nextUrl.searchParams.get("project");
+    if (projectId) {
+      const response = NextResponse.next({ request });
+      response.cookies.set("active_project", projectId, {
+        path: "/",
+        sameSite: "lax",
+        httpOnly: true,
+      });
+      return response;
+    }
+    return NextResponse.next({ request });
+  }
+
+  // ── Supabase mode ────────────────────────────────────────────────────────────
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -29,13 +53,8 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
   // Allow auth callback and login through unauthenticated
-  if (
-    pathname.startsWith("/auth/") ||
-    pathname === "/login"
-  ) {
+  if (pathname.startsWith("/auth/") || pathname === "/login") {
     return supabaseResponse;
   }
 

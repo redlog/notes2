@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
-import { getActiveProject, getUserProjects } from "@/lib/projects";
-import { getTaglines } from "@/lib/notes";
+import { getAuthUser } from "@/lib/auth";
+import { getProvider } from "@/lib/providers";
 import Header from "@/components/Header";
 import { renderMarkdown } from "@/lib/markdown";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
@@ -21,15 +20,24 @@ export default async function TaglinePage({
   const decodedTag = decodeURIComponent(tag);
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/login");
 
-  const [projects] = await Promise.all([getUserProjects(supabase, user.id)]);
-  const activeProject = await getActiveProject(supabase, user.id, sp.project);
+  const provider = await getProvider();
+
+  const [projects, activeProject] = await Promise.all([
+    provider.projects.getUserProjects(user.id),
+    provider.projects.getActive(user.id, sp.project),
+  ]);
+
   if (!activeProject) redirect("/");
 
-  const { lines, total } = await getTaglines(supabase, activeProject.id, decodedTag, page, PAGE_SIZE);
+  const { lines, total } = await provider.notes.getTaglines(
+    activeProject.id,
+    decodedTag,
+    page,
+    PAGE_SIZE
+  );
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   function pageHref(p: number) {
@@ -45,7 +53,7 @@ export default async function TaglinePage({
       <Header
         projects={projects}
         activeProject={activeProject}
-        userEmail={user.email ?? ""}
+        userEmail={user.email}
       />
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
         <Link
