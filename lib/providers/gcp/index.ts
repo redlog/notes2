@@ -457,7 +457,7 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
       );
 
       const all: { noteId: number; noteTitle: string; noteCreatedAt: string; line: string }[] = [];
-      const tagPattern = new RegExp(`#${tag}\\b`, "i");
+      const tagPattern = new RegExp(`#${tag}(?![a-z0-9_-])`, "i");
 
       for (const note of rows) {
         const noteCreatedAt =

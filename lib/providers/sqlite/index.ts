@@ -677,7 +677,7 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         noteCreatedAt: string;
         line: string;
       }[] = [];
-      const tagPattern = new RegExp(`#${tag}\\b`, "i");
+      const tagPattern = new RegExp(`#${tag}(?![a-z0-9_-])`, "i");
 
       for (const note of rows) {
         for (const line of note.body.split("\n")) {
