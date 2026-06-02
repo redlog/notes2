@@ -20,6 +20,7 @@ const securityHeaders = [
   // Content Security Policy
   // Notes:
   //   - `unsafe-inline` on script-src is required by Next.js for inline hydration scripts
+  //   - `unsafe-eval` on script-src is required by Next.js Fast Refresh (HMR) in development
   //   - `unsafe-inline` on style-src is required by Tailwind utility classes
   //   - connect-src allows Supabase API + realtime websocket
   //   - img-src allows signed Supabase Storage URLs rendered with plain <img>
@@ -27,7 +28,7 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' https://*.supabase.co data:",
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
