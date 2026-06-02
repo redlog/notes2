@@ -48,7 +48,7 @@ export default async function HomePage({
   const perPage = Number(sp.nn ?? settings.notes_per_page);
   const sortKey = (sp.sk ?? (search ? "relevance" : "created_at")) as SortKey;
   const sortOrder = (sp.so ?? "desc") as SortOrder;
-  const showPreview = sp.pv !== "0";
+  const showPreview = sp.pv === "1";
   const timeMin = sp.time_min;
   const timeMax = sp.time_max;
 
@@ -89,7 +89,7 @@ export default async function HomePage({
       nn: String(perPage),
       sk: sortKey,
       so: sortOrder,
-      pv: showPreview ? undefined : "0",
+      pv: showPreview ? "1" : undefined,
       ...overrides,
     };
     Object.entries(merged).forEach(([k, v]) => { if (v) params.set(k, v); });
@@ -174,7 +174,6 @@ export default async function HomePage({
                 currentSearch={search}
                 currentFilter={filter}
                 showScore={!!(search && sortKey === "relevance")}
-                showUpdated={sortKey === "updated_at"}
                 showPreview={showPreview}
               />
             ))

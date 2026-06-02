@@ -13,7 +13,6 @@ interface Props {
   currentSearch?: string;
   currentFilter?: string;
   showScore?: boolean;
-  showUpdated?: boolean;
   showPreview?: boolean;
 }
 
@@ -30,7 +29,6 @@ export default function NoteRow({
   currentSearch = "",
   currentFilter = "",
   showScore = false,
-  showUpdated = false,
   showPreview = true,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
@@ -126,7 +124,7 @@ export default function NoteRow({
                 <Calendar className="h-3 w-3" />
                 {fmt(note.created_at)}
               </span>
-              {showUpdated && (
+              {note.updated_at !== note.created_at && (
                 <span>edited {fmt(note.updated_at)}</span>
               )}
               {showScore && note.score !== undefined && (
