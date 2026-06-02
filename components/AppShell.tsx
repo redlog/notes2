@@ -57,7 +57,7 @@ export default function AppShell({
 
       <div className="flex">
         {/* Desktop sidebar — always visible at lg+ */}
-        <aside className="hidden lg:block w-80 xl:w-96 shrink-0 border-r border-border bg-muted/20">
+        <aside className="hidden lg:block w-96 xl:w-[28rem] shrink-0 border-r border-border bg-muted/20">
           <div className="sticky top-14 overflow-hidden h-[calc(100vh-3.5rem)] p-4">
             <Sidebar
               tags={tags}
