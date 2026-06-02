@@ -375,6 +375,9 @@ function migrate() {
     let imageCount = 0;
     let imagesFailed = 0;
 
+    const timestampToId = new Map(); // v1 unix timestamp → new note id
+    const insertedNotes = [];        // { noteId, title, cleanBody } for link remapping
+
     for (const file of noteFiles) {
       const rel = path.relative(NOTES_DIR, file.mdPath);
       let content;
@@ -401,6 +404,9 @@ function migrate() {
         failed++;
         continue;
       }
+
+      timestampToId.set(file.timestamp, Number(noteId));
+      insertedNotes.push({ noteId: Number(noteId), title, cleanBody });
 
       // FTS
       insertFts.run(noteId, title, cleanBody);
@@ -446,15 +452,32 @@ function migrate() {
       success++;
     }
 
-    return { success, failed, imageCount, imagesFailed };
+    // Pass 2: remap note:TIMESTAMP links to note:NEWID
+    const updateNoteBody = db.prepare('UPDATE notes SET body = ? WHERE id = ?');
+    const updateFtsBody  = db.prepare('UPDATE notes_fts SET body = ? WHERE rowid = ?');
+    let remapped = 0;
+    for (const { noteId, cleanBody } of insertedNotes) {
+      const newBody = cleanBody.replace(/note:(\d+)/g, (match, ts) => {
+        const mapped = timestampToId.get(Number(ts));
+        return mapped !== undefined ? `note:${mapped}` : match;
+      });
+      if (newBody !== cleanBody) {
+        updateNoteBody.run(newBody, noteId);
+        updateFtsBody.run(newBody, noteId);
+        remapped++;
+      }
+    }
+
+    return { success, failed, imageCount, imagesFailed, remapped };
   });
 
-  const { success, failed, imageCount, imagesFailed } = run();
+  const { success, failed, imageCount, imagesFailed, remapped } = run();
 
   console.log('');
   console.log('Done.');
   console.log(`  Notes:  ${success} migrated, ${failed} failed`);
   console.log(`  Images: ${imageCount} copied${imagesFailed ? `, ${imagesFailed} failed` : ''}`);
+  if (remapped > 0) console.log(`  Links:  note: references remapped in ${remapped} note(s)`);
   if (failed > 0 || imagesFailed > 0) process.exit(1);
 }
 

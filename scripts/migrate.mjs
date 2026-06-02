@@ -243,6 +243,9 @@ async function migrate() {
   let failed = 0;
   let imageCount = 0;
 
+  const timestampToId = new Map(); // v1 unix timestamp → new note id
+  const insertedNotes = [];        // { noteId, cleanBody } for link remapping
+
   for (const file of noteFiles) {
     const rel = path.relative(NOTES_DIR, file.mdPath);
     let content;
@@ -288,6 +291,8 @@ async function migrate() {
     }
 
     const noteId = noteData.id;
+    timestampToId.set(file.timestamp, noteId);
+    insertedNotes.push({ noteId, cleanBody });
 
     // ── Tags ───────────────────────────────────────────────────────────────
     if (tags.length) {
@@ -350,10 +355,31 @@ async function migrate() {
     success++;
   }
 
+  // Pass 2: remap note:TIMESTAMP links to note:NEWID
+  let remapped = 0;
+  for (const { noteId, cleanBody } of insertedNotes) {
+    const newBody = cleanBody.replace(/note:(\d+)/g, (match, ts) => {
+      const mapped = timestampToId.get(Number(ts));
+      return mapped !== undefined ? `note:${mapped}` : match;
+    });
+    if (newBody !== cleanBody) {
+      const { error: updateErr } = await supabase
+        .from('notes')
+        .update({ body: newBody })
+        .eq('id', noteId);
+      if (updateErr) {
+        console.warn(`  WARN note ${noteId}: failed to remap note: links — ${updateErr.message}`);
+      } else {
+        remapped++;
+      }
+    }
+  }
+
   console.log('');
   console.log(`Done.`);
   console.log(`  Notes:  ${success} migrated, ${failed} failed`);
   if (!DRY_RUN) console.log(`  Images: ${imageCount} uploaded`);
+  if (remapped > 0) console.log(`  Links:  note: references remapped in ${remapped} note(s)`);
   if (failed > 0) process.exit(1);
 }
 
