@@ -311,7 +311,7 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
 
       // Pre-filter by required tags / people
       let filterIds: number[] | null = null;
-      if (requiredTags.length > 0 || requiredPeople.length > 0) {
+      if (requiredTags.length > 0 || requiredPeople.length > 0 || exclusivePeople.length > 0) {
         let ids: Set<number> | null = null;
 
         for (const tag of requiredTags) {
@@ -321,7 +321,7 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
           const s = new Set(rows.map((r) => r.note_id));
           ids = ids === null ? s : setIntersect(ids, s);
         }
-        for (const person of requiredPeople) {
+        for (const person of [...requiredPeople, ...exclusivePeople]) {
           const rows = db
             .prepare("SELECT note_id FROM note_people WHERE person = ?")
             .all(person) as { note_id: number }[];
