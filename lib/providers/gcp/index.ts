@@ -188,6 +188,12 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
       const effectiveSortKey = sortKey === "relevance" ? "created_at" : sortKey;
       const orderDir = sortOrder === "asc" ? "ASC" : "DESC";
 
+      for (const person of [...requiredPeople, ...exclusivePeople]) {
+        conditions.push(`EXISTS (SELECT 1 FROM note_people np_f WHERE np_f.note_id = n.id AND np_f.person = $${pIdx})`);
+        sqlVals.push(person);
+        pIdx++;
+      }
+
       const whereClause = conditions.join(" AND ");
       sqlVals.push(perPage, offset);
 

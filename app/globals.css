@@ -44,7 +44,7 @@
 .note-body p  { @apply mb-3 leading-relaxed; }
 .note-body ul { @apply list-disc list-inside mb-3 space-y-1; }
 .note-body ol { @apply list-decimal list-inside mb-3 space-y-1; }
-.note-body li > p:only-child { display: inline; margin: 0; }
+.note-body li > p:first-child { display: inline; margin: 0; }
 .note-body li ul, .note-body li ol { @apply ml-5 mt-1; }
 .note-body blockquote { @apply border-l-4 border-slate-300 pl-4 italic text-slate-600 my-3; }
 .note-body code { @apply bg-slate-100 px-1.5 py-0.5 rounded text-sm font-mono text-slate-800; }

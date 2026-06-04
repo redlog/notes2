@@ -101,7 +101,7 @@ export async function listNotes(
   // Pre-query note_ids so the paginated query uses the correct total count.
   // RLS + the main query's project_id filter ensure cross-project safety.
   let filterIds: number[] | null = null;
-  if (requiredTags.length > 0 || requiredPeople.length > 0) {
+  if (requiredTags.length > 0 || requiredPeople.length > 0 || exclusivePeople.length > 0) {
     const toIdSet = (data: { note_id: number }[] | null): Set<number> =>
       new Set<number>((data ?? []).map((r) => r.note_id));
 
@@ -110,7 +110,7 @@ export async function listNotes(
         supabase.from("note_tags").select("note_id").eq("tag", tag)
           .then(({ data }) => toIdSet(data as { note_id: number }[] | null))
       ),
-      ...requiredPeople.map((person) =>
+      ...[...requiredPeople, ...exclusivePeople].map((person) =>
         supabase.from("note_people").select("note_id").eq("person", person)
           .then(({ data }) => toIdSet(data as { note_id: number }[] | null))
       ),
