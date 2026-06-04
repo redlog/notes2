@@ -62,7 +62,7 @@ export default function NoteRow({
               href={`/note/${note.id}`}
               className="font-medium text-foreground hover:text-primary transition-colors line-clamp-2 leading-snug"
             >
-              {note.title}
+              {note.title || <span className="text-foreground/40 italic">Untitled</span>}
             </Link>
 
             {/* Tags */}

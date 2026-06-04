@@ -25,7 +25,7 @@ export async function generateMetadata({
   const provider = await getProvider();
   const note = await provider.notes.get(noteId);
   if (!note || note.user_id !== user.id) return {};
-  return { title: note.title };
+  return { title: note.title || 'Untitled' };
 }
 
 export default async function ReadNotePage({
@@ -103,9 +103,9 @@ export default async function ReadNotePage({
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Note body */}
           <article className="flex-1 min-w-0">
-            {note.title && (
-              <h1 className="text-2xl font-bold text-foreground mb-4">{note.title}</h1>
-            )}
+            <h1 className="text-2xl font-bold text-foreground mb-4">
+              {note.title || <span className="text-foreground/40 italic font-normal">Untitled</span>}
+            </h1>
             <div
               className="note-body prose max-w-none text-foreground"
               dangerouslySetInnerHTML={{ __html: html }}
