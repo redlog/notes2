@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
@@ -10,6 +11,22 @@ import DeleteButton from "@/components/DeleteButton";
 import MoveNoteButton from "@/components/MoveNoteButton";
 import { Button } from "@/components/ui/button";
 import { Pencil, Copy, ArrowLeft, Clock, Calendar, Link2, History } from "lucide-react";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const noteId = Number(id);
+  if (isNaN(noteId)) return {};
+  const user = await getAuthUser();
+  if (!user) return {};
+  const provider = await getProvider();
+  const note = await provider.notes.get(noteId);
+  if (!note || note.user_id !== user.id) return {};
+  return { title: note.title };
+}
 
 export default async function ReadNotePage({
   params,

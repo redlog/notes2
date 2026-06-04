@@ -38,6 +38,8 @@ export default function Editor({
 }: Props) {
   const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const tagInputRef = useRef<HTMLInputElement>(null);
+  const personInputRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
@@ -62,6 +64,8 @@ export default function Editor({
   const [personInput, setPersonInput] = useState("");
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [personSuggestions, setPersonSuggestions] = useState<string[]>([]);
+  const [tagSuggestionIndex, setTagSuggestionIndex] = useState(-1);
+  const [personSuggestionIndex, setPersonSuggestionIndex] = useState(-1);
   const [font, setFont] = useState<"mono" | "sans" | "serif">("mono");
   const [metaOpen, setMetaOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
@@ -240,6 +244,8 @@ export default function Editor({
     if (clean && SLUG_RE.test(clean) && !tags.includes(clean)) setTags([...tags, clean]);
     setTagInput("");
     setTagSuggestions([]);
+    setTagSuggestionIndex(-1);
+    setTimeout(() => tagInputRef.current?.focus(), 0);
   }
 
   function addPerson(person: string) {
@@ -247,6 +253,8 @@ export default function Editor({
     if (clean && SLUG_RE.test(clean) && !people.includes(clean)) setPeople([...people, clean]);
     setPersonInput("");
     setPersonSuggestions([]);
+    setPersonSuggestionIndex(-1);
+    setTimeout(() => personInputRef.current?.focus(), 0);
   }
 
   function removeTag(tag: string) { setTags(tags.filter((t) => t !== tag)); }
@@ -356,28 +364,44 @@ export default function Editor({
         </div>
         <div className="relative">
           <input
+            ref={tagInputRef}
             type="text"
             value={tagInput}
             onChange={(e) => {
               setTagInput(e.target.value);
+              setTagSuggestionIndex(-1);
               const q = e.target.value.replace(/^#/, "").toLowerCase();
               setTagSuggestions(
                 q ? allTags.filter((t) => t.toLowerCase().includes(q)).slice(0, 8) : []
               );
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && tagInput.trim()) { e.preventDefault(); addTag(tagInput); }
+              if (tagSuggestions.length > 0 && e.key === "ArrowDown") {
+                e.preventDefault();
+                setTagSuggestionIndex((i) => Math.min(i + 1, tagSuggestions.length - 1));
+                return;
+              }
+              if (tagSuggestions.length > 0 && e.key === "ArrowUp") {
+                e.preventDefault();
+                setTagSuggestionIndex((i) => Math.max(i - 1, -1));
+                return;
+              }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (tagSuggestionIndex >= 0) addTag(tagSuggestions[tagSuggestionIndex]);
+                else if (tagInput.trim()) addTag(tagInput);
+              }
             }}
             placeholder="Add tag…"
             className="w-full h-8 border border-input rounded-md px-2.5 py-1 text-xs bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           {tagSuggestions.length > 0 && (
             <ul className="absolute z-20 bg-popover border border-border rounded-md shadow-md w-full text-xs mt-1 overflow-hidden">
-              {tagSuggestions.map((t) => (
+              {tagSuggestions.map((t, idx) => (
                 <li
                   key={t}
-                  onClick={() => addTag(t)}
-                  className="px-2.5 py-1.5 cursor-pointer hover:bg-accent transition-colors"
+                  onMouseDown={(e) => { e.preventDefault(); addTag(t); }}
+                  className={`px-2.5 py-1.5 cursor-pointer transition-colors ${idx === tagSuggestionIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent"}`}
                 >
                   #{t}
                 </li>
@@ -420,28 +444,44 @@ export default function Editor({
         </div>
         <div className="relative">
           <input
+            ref={personInputRef}
             type="text"
             value={personInput}
             onChange={(e) => {
               setPersonInput(e.target.value);
+              setPersonSuggestionIndex(-1);
               const q = e.target.value.replace(/^@/, "").toLowerCase();
               setPersonSuggestions(
                 q ? allPeople.filter((p) => p.toLowerCase().includes(q)).slice(0, 8) : []
               );
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && personInput.trim()) { e.preventDefault(); addPerson(personInput); }
+              if (personSuggestions.length > 0 && e.key === "ArrowDown") {
+                e.preventDefault();
+                setPersonSuggestionIndex((i) => Math.min(i + 1, personSuggestions.length - 1));
+                return;
+              }
+              if (personSuggestions.length > 0 && e.key === "ArrowUp") {
+                e.preventDefault();
+                setPersonSuggestionIndex((i) => Math.max(i - 1, -1));
+                return;
+              }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (personSuggestionIndex >= 0) addPerson(personSuggestions[personSuggestionIndex]);
+                else if (personInput.trim()) addPerson(personInput);
+              }
             }}
             placeholder="Add person…"
             className="w-full h-8 border border-input rounded-md px-2.5 py-1 text-xs bg-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
           {personSuggestions.length > 0 && (
             <ul className="absolute z-20 bg-popover border border-border rounded-md shadow-md w-full text-xs mt-1 overflow-hidden">
-              {personSuggestions.map((p) => (
+              {personSuggestions.map((p, idx) => (
                 <li
                   key={p}
-                  onClick={() => addPerson(p)}
-                  className="px-2.5 py-1.5 cursor-pointer hover:bg-accent transition-colors"
+                  onMouseDown={(e) => { e.preventDefault(); addPerson(p); }}
+                  className={`px-2.5 py-1.5 cursor-pointer transition-colors ${idx === personSuggestionIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent"}`}
                 >
                   @{p}
                 </li>
