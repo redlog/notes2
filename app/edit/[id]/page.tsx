@@ -1,8 +1,25 @@
 import { notFound, redirect } from "next/navigation";
+import type { Metadata } from "next";
 import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 import Header from "@/components/Header";
 import Editor from "@/components/Editor";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const noteId = Number(id);
+  if (isNaN(noteId)) return {};
+  const user = await getAuthUser();
+  if (!user) return {};
+  const provider = await getProvider();
+  const note = await provider.notes.get(noteId);
+  if (!note || note.user_id !== user.id) return {};
+  return { title: note.title };
+}
 
 export default async function EditNotePage({
   params,
