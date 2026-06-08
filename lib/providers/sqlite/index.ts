@@ -309,12 +309,17 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
       const exclusivePeople = filterTokens.filter((t) => t.startsWith("+@")).map((t) => t.slice(2));
       const excludedTags    = filterTokens.filter((t) => t.startsWith("~#")).map((t) => t.slice(2));
 
-      // Pre-filter by required tags / people
+      // Pre-filter by required / exclusive tags & people
       let filterIds: number[] | null = null;
-      if (requiredTags.length > 0 || requiredPeople.length > 0 || exclusivePeople.length > 0) {
+      if (
+        requiredTags.length > 0 ||
+        requiredPeople.length > 0 ||
+        exclusiveTags.length > 0 ||
+        exclusivePeople.length > 0
+      ) {
         let ids: Set<number> | null = null;
 
-        for (const tag of requiredTags) {
+        for (const tag of [...requiredTags, ...exclusiveTags]) {
           const rows = db
             .prepare("SELECT note_id FROM note_tags WHERE tag = ?")
             .all(tag) as { note_id: number }[];
@@ -330,6 +335,92 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         }
 
         filterIds = [...(ids ?? new Set<number>())];
+        if (filterIds.length === 0) {
+          return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+        }
+      }
+
+      // ── Narrow to exact matches for exclusive/excluded filters ────────────
+      // "+@person"/"+#tag" require the note's header people/tags to be
+      // *exactly* that set, and "~#tag" excludes notes mentioning a tag at
+      // all. Both need each candidate's full tag/person list, so resolve the
+      // exact matching note ids *before* counting/paginating — otherwise the
+      // reported total (and page contents) reflect the looser "contains"
+      // match instead of the filter actually applied to the results.
+      if (exclusiveTags.length > 0 || exclusivePeople.length > 0 || excludedTags.length > 0) {
+        const baseConditions: string[] = ["n.project_id = ?"];
+        const baseValues: unknown[] = [projectId];
+
+        if (search) {
+          const ftsQ = buildFtsQuery(search);
+          if (ftsQ) {
+            baseConditions.push("n.id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)");
+            baseValues.push(ftsQ);
+          }
+        }
+        if (filterIds !== null) {
+          baseConditions.push(`n.id IN (${filterIds.map(() => "?").join(",")})`);
+          baseValues.push(...filterIds);
+        }
+        if (timeMin) { baseConditions.push("n.created_at >= ?"); baseValues.push(timeMin); }
+        if (timeMax) {
+          const end = new Date(timeMax);
+          end.setDate(end.getDate() + 1);
+          baseConditions.push("n.created_at < ?");
+          baseValues.push(end.toISOString());
+        }
+
+        const candidateIds = (
+          db.prepare(`SELECT id FROM notes n WHERE ${baseConditions.join(" AND ")}`).all(...baseValues) as { id: number }[]
+        ).map((r) => r.id);
+
+        if (candidateIds.length === 0) {
+          return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+        }
+
+        const cph = candidateIds.map(() => "?").join(",");
+        const candTagRows = db
+          .prepare(`SELECT note_id, tag, is_header FROM note_tags WHERE note_id IN (${cph})`)
+          .all(...candidateIds) as { note_id: number; tag: string; is_header: number }[];
+        const candPersonRows = db
+          .prepare(`SELECT note_id, person, is_header FROM note_people WHERE note_id IN (${cph})`)
+          .all(...candidateIds) as { note_id: number; person: string; is_header: number }[];
+
+        const candTagMap = new Map<number, { tag: string; is_header: boolean }[]>();
+        const candPersonMap = new Map<number, { person: string; is_header: boolean }[]>();
+        for (const r of candTagRows) {
+          if (!candTagMap.has(r.note_id)) candTagMap.set(r.note_id, []);
+          candTagMap.get(r.note_id)!.push({ tag: r.tag, is_header: !!r.is_header });
+        }
+        for (const r of candPersonRows) {
+          if (!candPersonMap.has(r.note_id)) candPersonMap.set(r.note_id, []);
+          candPersonMap.get(r.note_id)!.push({ person: r.person, is_header: !!r.is_header });
+        }
+
+        filterIds = candidateIds.filter((id) => {
+          const tags = candTagMap.get(id) ?? [];
+          const people = candPersonMap.get(id) ?? [];
+          if (
+            exclusiveTags.length &&
+            !(
+              tags.filter((t) => t.is_header).length === exclusiveTags.length &&
+              exclusiveTags.every((t) => tags.some((nt) => nt.tag === t && nt.is_header))
+            )
+          )
+            return false;
+          if (
+            exclusivePeople.length &&
+            !(
+              people.filter((p) => p.is_header).length === exclusivePeople.length &&
+              exclusivePeople.every((p) => people.some((np) => np.person === p && np.is_header))
+            )
+          )
+            return false;
+          if (excludedTags.length && excludedTags.some((t) => tags.some((nt) => nt.tag === t)))
+            return false;
+          return true;
+        });
+
         if (filterIds.length === 0) {
           return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
         }
@@ -404,7 +495,9 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         personMap.get(r.note_id)!.push({ person: r.person, is_header: !!r.is_header });
       }
 
-      let notes: NoteListItem[] = rows.map((row) => ({
+      // All filter tokens are now resolved into `filterIds` above, so no
+      // further client-side filtering is needed here.
+      const notes: NoteListItem[] = rows.map((row) => ({
         id: row.id,
         title: row.title,
         created_at: row.created_at,
@@ -413,29 +506,6 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         people: personMap.get(row.id) ?? [],
         preview: buildPreview(row.body),
       }));
-
-      // Client-side exclusive/excluded filters
-      if (exclusiveTags.length) {
-        notes = notes.filter(
-          (n) =>
-            n.tags.filter((t) => t.is_header).length === exclusiveTags.length &&
-            exclusiveTags.every((t) => n.tags.some((nt) => nt.tag === t && nt.is_header))
-        );
-      }
-      if (exclusivePeople.length) {
-        notes = notes.filter(
-          (n) =>
-            n.people.filter((p) => p.is_header).length === exclusivePeople.length &&
-            exclusivePeople.every((p) =>
-              n.people.some((np) => np.person === p && np.is_header)
-            )
-        );
-      }
-      if (excludedTags.length) {
-        notes = notes.filter(
-          (n) => !excludedTags.some((t) => n.tags.some((nt) => nt.tag === t))
-        );
-      }
 
       return { notes, total, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
     },

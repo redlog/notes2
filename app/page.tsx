@@ -48,7 +48,8 @@ export default async function HomePage({
   const perPage = Number(sp.nn ?? settings.notes_per_page);
   const sortKey = (sp.sk ?? (search ? "relevance" : "created_at")) as SortKey;
   const sortOrder = (sp.so ?? "desc") as SortOrder;
-  const showPreview = sp.pv === "1";
+  const bodyMode: "none" | "preview" | "full" =
+    sp.pv === "2" ? "full" : sp.pv === "1" ? "preview" : "none";
   const timeMin = sp.time_min;
   const timeMax = sp.time_max;
 
@@ -89,7 +90,7 @@ export default async function HomePage({
       nn: String(perPage),
       sk: sortKey,
       so: sortOrder,
-      pv: showPreview ? "1" : undefined,
+      pv: bodyMode === "full" ? "2" : bodyMode === "preview" ? "1" : undefined,
       ...overrides,
     };
     Object.entries(merged).forEach(([k, v]) => { if (v) params.set(k, v); });
@@ -139,15 +140,25 @@ export default async function HomePage({
             >
               {sortOrder === "asc" ? "↑" : "↓"}
             </Link>
-            <Link
-              href={buildUrl({ pv: showPreview ? "0" : "1" })}
-              className="flex items-center gap-1.5 px-2 py-1.5 lg:py-0.5 rounded text-xs hover:bg-muted transition-colors ml-2"
-            >
-              <span className={`h-3.5 w-3.5 border rounded-sm flex items-center justify-center shrink-0 transition-colors ${showPreview ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/50"}`}>
-                {showPreview && <span className="text-[9px] leading-none font-bold">✓</span>}
-              </span>
-              Previews
-            </Link>
+            <div className="flex items-center gap-0.5 rounded bg-muted/40 p-0.5 ml-2">
+              {([
+                { mode: "none", label: "No body", pv: "0" },
+                { mode: "preview", label: "Preview", pv: "1" },
+                { mode: "full", label: "Full", pv: "2" },
+              ] as const).map(({ mode, label, pv }) => (
+                <Link
+                  key={mode}
+                  href={buildUrl({ pv })}
+                  className={`px-2 py-1.5 lg:py-0.5 rounded text-xs transition-colors ${
+                    bodyMode === mode
+                      ? "bg-primary text-primary-foreground font-medium"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -174,7 +185,7 @@ export default async function HomePage({
                 currentSearch={search}
                 currentFilter={filter}
                 showScore={!!(search && sortKey === "relevance")}
-                showPreview={showPreview}
+                bodyMode={bodyMode}
               />
             ))
           )}

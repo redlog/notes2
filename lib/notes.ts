@@ -97,16 +97,21 @@ export async function listNotes(
     .filter((t) => t.startsWith("~#"))
     .map((t) => t.slice(2));
 
-  // ── DB-side pre-filter for required tags/people ───────────────────────────
+  // ── DB-side pre-filter for required/exclusive tags & people ───────────────
   // Pre-query note_ids so the paginated query uses the correct total count.
   // RLS + the main query's project_id filter ensure cross-project safety.
   let filterIds: number[] | null = null;
-  if (requiredTags.length > 0 || requiredPeople.length > 0 || exclusivePeople.length > 0) {
+  if (
+    requiredTags.length > 0 ||
+    requiredPeople.length > 0 ||
+    exclusiveTags.length > 0 ||
+    exclusivePeople.length > 0
+  ) {
     const toIdSet = (data: { note_id: number }[] | null): Set<number> =>
       new Set<number>((data ?? []).map((r) => r.note_id));
 
     const idSets: Set<number>[] = await Promise.all([
-      ...requiredTags.map((tag) =>
+      ...[...requiredTags, ...exclusiveTags].map((tag) =>
         supabase.from("note_tags").select("note_id").eq("tag", tag)
           .then(({ data }) => toIdSet(data as { note_id: number }[] | null))
       ),
@@ -116,7 +121,7 @@ export async function listNotes(
       ),
     ]);
 
-    // Intersect all sets (notes must satisfy every required token)
+    // Intersect all sets (notes must satisfy every required/exclusive token)
     let ids: Set<number> | null = null;
     for (const set of idSets) {
       if (ids === null) {
@@ -132,6 +137,73 @@ export async function listNotes(
     filterIds = [...(ids ?? new Set<number>())];
 
     // Short-circuit: no notes match all filters
+    if (filterIds.length === 0) {
+      return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+    }
+  }
+
+  // ── Narrow to exact matches for exclusive/excluded filters ────────────────
+  // "+@person"/"+#tag" mean the note's header people/tags must be *exactly*
+  // that set (not just contain it), and "~#tag" excludes notes that mention
+  // a tag at all. Both checks need each candidate's full tag/person list, so
+  // resolve the exact matching note ids *before* counting/paginating —
+  // otherwise the reported total (and page contents) reflect the looser
+  // "contains" match instead of the filter actually applied to the results.
+  if (exclusiveTags.length > 0 || exclusivePeople.length > 0 || excludedTags.length > 0) {
+    let candidateQuery = supabase
+      .from("notes")
+      .select("id, note_tags(tag, is_header), note_people(person, is_header)")
+      .eq("project_id", projectId);
+
+    if (filterIds !== null) candidateQuery = candidateQuery.in("id", filterIds);
+    if (search) {
+      candidateQuery = candidateQuery.textSearch("search_vec", search, {
+        type: "websearch",
+        config: "english",
+      });
+    }
+    if (timeMin) candidateQuery = candidateQuery.gte("created_at", timeMin);
+    if (timeMax) {
+      const end = new Date(timeMax);
+      end.setDate(end.getDate() + 1);
+      candidateQuery = candidateQuery.lt("created_at", end.toISOString());
+    }
+
+    const { data: candidateData, error: candidateError } = await candidateQuery;
+    if (candidateError) throw candidateError;
+
+    let candidates = (candidateData ?? []) as {
+      id: number;
+      note_tags: NoteTag[] | null;
+      note_people: NotePerson[] | null;
+    }[];
+
+    if (exclusiveTags.length) {
+      candidates = candidates.filter((n) => {
+        const tags = n.note_tags ?? [];
+        return (
+          tags.filter((t) => t.is_header).length === exclusiveTags.length &&
+          exclusiveTags.every((t) => tags.some((nt) => nt.tag === t && nt.is_header))
+        );
+      });
+    }
+    if (exclusivePeople.length) {
+      candidates = candidates.filter((n) => {
+        const people = n.note_people ?? [];
+        return (
+          people.filter((p) => p.is_header).length === exclusivePeople.length &&
+          exclusivePeople.every((p) => people.some((np) => np.person === p && np.is_header))
+        );
+      });
+    }
+    if (excludedTags.length) {
+      candidates = candidates.filter((n) => {
+        const tags = n.note_tags ?? [];
+        return !excludedTags.some((t) => tags.some((nt) => nt.tag === t));
+      });
+    }
+
+    filterIds = candidates.map((c) => c.id);
     if (filterIds.length === 0) {
       return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
     }
@@ -177,8 +249,9 @@ export async function listNotes(
   const { data, count, error } = await query;
   if (error) throw error;
 
-  // Map rows — requiredTags/People now handled DB-side
-  let notes: NoteListItem[] = (data ?? []).map((row: Record<string, unknown>) => ({
+  // Map rows — all filter tokens are now resolved into `filterIds` DB-side,
+  // so no further client-side filtering is needed here.
+  const notes: NoteListItem[] = (data ?? []).map((row: Record<string, unknown>) => ({
     id: row.id as number,
     title: row.title as string,
     created_at: row.created_at as string,
@@ -187,30 +260,6 @@ export async function listNotes(
     people: (row.note_people as NotePerson[]) ?? [],
     preview: buildPreview(row.body as string ?? ""),
   }));
-
-  // Exclusive/excluded filters still applied client-side (they need the full
-  // tag/person set per note and are uncommon enough not to affect typical pagination)
-  if (exclusiveTags.length) {
-    notes = notes.filter(
-      (n) =>
-        n.tags.filter((t) => t.is_header).length === exclusiveTags.length &&
-        exclusiveTags.every((t) => n.tags.some((nt) => nt.tag === t && nt.is_header))
-    );
-  }
-  if (exclusivePeople.length) {
-    notes = notes.filter(
-      (n) =>
-        n.people.filter((p) => p.is_header).length === exclusivePeople.length &&
-        exclusivePeople.every((p) =>
-          n.people.some((np) => np.person === p && np.is_header)
-        )
-    );
-  }
-  if (excludedTags.length) {
-    notes = notes.filter(
-      (n) => !excludedTags.some((t) => n.tags.some((nt) => nt.tag === t))
-    );
-  }
 
   return {
     notes,
