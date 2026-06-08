@@ -194,6 +194,72 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         pIdx++;
       }
 
+      // ── Narrow to exact matches for filters that need full tag/person sets ──
+      // requiredTags isn't enforced in SQL above, and "+@person"/"+#tag" mean
+      // the note's header people/tags must be *exactly* that set (not just
+      // contain it), while "~#tag" excludes notes mentioning a tag at all.
+      // These checks need each candidate's full tag/person list, so resolve
+      // the exact matching note ids *before* counting/paginating — otherwise
+      // total_count (and page contents) would reflect the looser "contains"
+      // match instead of the filter actually applied to the results.
+      if (
+        requiredTags.length > 0 ||
+        exclusiveTags.length > 0 ||
+        exclusivePeople.length > 0 ||
+        excludedTags.length > 0
+      ) {
+        const candWhere = conditions.join(" AND ");
+        const { rows: candRows } = await db.query(
+          `SELECT n.id,
+             COALESCE(
+               json_agg(DISTINCT jsonb_build_object('tag', nt.tag, 'is_header', nt.is_header))
+               FILTER (WHERE nt.tag IS NOT NULL), '[]'
+             ) AS tags,
+             COALESCE(
+               json_agg(DISTINCT jsonb_build_object('person', np.person, 'is_header', np.is_header))
+               FILTER (WHERE np.person IS NOT NULL), '[]'
+             ) AS people
+           FROM notes n
+           LEFT JOIN note_tags   nt ON nt.note_id = n.id
+           LEFT JOIN note_people np ON np.note_id = n.id
+           WHERE ${candWhere}
+           GROUP BY n.id`,
+          sqlVals
+        );
+
+        let candidates = candRows as {
+          id: number;
+          tags: { tag: string; is_header: boolean }[];
+          people: { person: string; is_header: boolean }[];
+        }[];
+
+        if (requiredTags.length)
+          candidates = candidates.filter((n) => requiredTags.every((t) => n.tags.some((nt) => nt.tag === t)));
+        if (exclusiveTags.length)
+          candidates = candidates.filter(
+            (n) =>
+              n.tags.filter((t) => t.is_header).length === exclusiveTags.length &&
+              exclusiveTags.every((t) => n.tags.some((nt) => nt.tag === t && nt.is_header))
+          );
+        if (exclusivePeople.length)
+          candidates = candidates.filter(
+            (n) =>
+              n.people.filter((p) => p.is_header).length === exclusivePeople.length &&
+              exclusivePeople.every((p) => n.people.some((np) => np.person === p && np.is_header))
+          );
+        if (excludedTags.length)
+          candidates = candidates.filter((n) => !excludedTags.some((t) => n.tags.some((nt) => nt.tag === t)));
+
+        const exactIds = candidates.map((c) => c.id);
+        if (exactIds.length === 0) {
+          return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+        }
+
+        conditions.push(`n.id = ANY($${pIdx})`);
+        sqlVals.push(exactIds);
+        pIdx++;
+      }
+
       const whereClause = conditions.join(" AND ");
       sqlVals.push(perPage, offset);
 
@@ -222,7 +288,10 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
 
       const totalCount = rows.length > 0 ? Number(rows[0].total_count) : 0;
 
-      let notes: NoteListItem[] = rows.map((row) => ({
+      // requiredTags/exclusive*/excluded* are now resolved into the SQL WHERE
+      // via `exactIds` above; requiredPeople is enforced via the EXISTS
+      // conditions. No further client-side filtering is needed here.
+      const notes: NoteListItem[] = rows.map((row) => ({
         id: row.id as number,
         title: row.title as string,
         created_at: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
@@ -230,26 +299,6 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         tags: row.tags ?? [],
         people: row.people ?? [],
       }));
-
-      // Client-side filter application (matches Supabase impl behaviour)
-      if (requiredTags.length)
-        notes = notes.filter((n) => requiredTags.every((t) => n.tags.some((nt) => nt.tag === t)));
-      if (requiredPeople.length)
-        notes = notes.filter((n) => requiredPeople.every((p) => n.people.some((np) => np.person === p)));
-      if (exclusiveTags.length)
-        notes = notes.filter(
-          (n) =>
-            n.tags.filter((t) => t.is_header).length === exclusiveTags.length &&
-            exclusiveTags.every((t) => n.tags.some((nt) => nt.tag === t && nt.is_header))
-        );
-      if (exclusivePeople.length)
-        notes = notes.filter(
-          (n) =>
-            n.people.filter((p) => p.is_header).length === exclusivePeople.length &&
-            exclusivePeople.every((p) => n.people.some((np) => np.person === p && np.is_header))
-        );
-      if (excludedTags.length)
-        notes = notes.filter((n) => !excludedTags.some((t) => n.tags.some((nt) => nt.tag === t)));
 
       return {
         notes,
