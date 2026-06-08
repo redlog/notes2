@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import TagPill from "./TagPill";
 import type { NoteListItem } from "@/lib/types";
@@ -13,7 +13,7 @@ interface Props {
   currentSearch?: string;
   currentFilter?: string;
   showScore?: boolean;
-  showPreview?: boolean;
+  bodyMode?: "none" | "preview" | "full";
 }
 
 function fmt(iso: string) {
@@ -29,22 +29,36 @@ export default function NoteRow({
   currentSearch = "",
   currentFilter = "",
   showScore = false,
-  showPreview = true,
+  bodyMode = "preview",
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [body, setBody] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  async function loadBody() {
+    setLoading(true);
+    const res = await fetch(`/api/rendered-note-body?id=${note.id}`);
+    const data = await res.json();
+    setBody(data.html ?? "");
+    setLoading(false);
+  }
+
   async function toggle() {
-    if (!expanded && body === null) {
-      setLoading(true);
-      const res = await fetch(`/api/rendered-note-body?id=${note.id}`);
-      const data = await res.json();
-      setBody(data.html ?? "");
-      setLoading(false);
-    }
+    if (!expanded && body === null) await loadBody();
     setExpanded((v) => !v);
   }
+
+  // In "full" mode, every row shows its rendered body inline — fetch it eagerly.
+  useEffect(() => {
+    if (bodyMode !== "full" || body !== null) return;
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/rendered-note-body?id=${note.id}`)
+      .then((res) => res.json())
+      .then((data) => { if (!cancelled) setBody(data.html ?? ""); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [bodyMode, body, note.id]);
 
   const headerTags = note.tags.filter((t) => t.is_header);
   const mentionTags = note.tags.filter((t) => !t.is_header);
@@ -111,8 +125,8 @@ export default function NoteRow({
               </div>
             )}
 
-            {/* Body preview — wide screens only, hidden when expanded */}
-            {note.preview && showPreview && !expanded && (
+            {/* Body preview — wide screens only, hidden when expanded or in full mode */}
+            {note.preview && bodyMode === "preview" && !expanded && (
               <p className="hidden xl:block text-xs text-muted-foreground/70 mt-1.5 line-clamp-2 leading-relaxed">
                 {note.preview}
               </p>
@@ -157,22 +171,24 @@ export default function NoteRow({
               <TooltipContent>Clone</TooltipContent>
             </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9 lg:h-7 lg:w-7" onClick={toggle}>
-                  {expanded
-                    ? <ChevronUp className="h-3.5 w-3.5" />
-                    : <ChevronDown className="h-3.5 w-3.5" />
-                  }
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{expanded ? "Collapse" : "Expand"}</TooltipContent>
-            </Tooltip>
+            {bodyMode !== "full" && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 lg:h-7 lg:w-7" onClick={toggle}>
+                    {expanded
+                      ? <ChevronUp className="h-3.5 w-3.5" />
+                      : <ChevronDown className="h-3.5 w-3.5" />
+                    }
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{expanded ? "Collapse" : "Expand"}</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
 
-        {/* Expanded body */}
-        {expanded && (
+        {/* Expanded body (manual toggle, "none"/"preview" modes) */}
+        {bodyMode !== "full" && expanded && (
           <div className="mt-3 pl-0">
             {loading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
@@ -183,6 +199,23 @@ export default function NoteRow({
               <div
                 className="note-body text-sm text-foreground/90 border-l-2 border-border pl-3"
                 dangerouslySetInnerHTML={{ __html: body ?? "" }}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Full rendered body — always shown inline in "full" mode */}
+        {bodyMode === "full" && (
+          <div className="mt-3 pl-0">
+            {loading || body === null ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                <div className="h-3 w-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                Loading…
+              </div>
+            ) : (
+              <div
+                className="note-body text-sm text-foreground/90 border-l-2 border-border pl-3"
+                dangerouslySetInnerHTML={{ __html: body }}
               />
             )}
           </div>
