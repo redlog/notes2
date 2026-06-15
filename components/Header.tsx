@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
-import { Menu, Plus, Settings, LogOut, ChevronDown, User, LayoutGrid } from "lucide-react";
+import { Menu, Plus, Settings, LogOut, ChevronDown, User, LayoutGrid, Power } from "lucide-react";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -37,6 +37,15 @@ export default function Header({ projects, activeProject, userEmail, localMode, 
 
   function switchProject(projectId: string) {
     router.push(`/?project=${projectId}`);
+  }
+
+  async function shutdown() {
+    if (!confirm("Shut down Localnotes? You'll need to restart the app to use it again.")) return;
+    try {
+      await fetch("/api/shutdown", { method: "POST" });
+    } catch {
+      // Expected — the server process exits mid-response.
+    }
   }
 
   return (
@@ -156,6 +165,18 @@ export default function Header({ projects, activeProject, userEmail, localMode, 
                 >
                   <LogOut className="h-4 w-4" />
                   Sign out
+                </DropdownMenuItem>
+              </>
+            )}
+            {localMode && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={shutdown}
+                  className="cursor-pointer text-destructive focus:text-destructive flex items-center gap-2"
+                >
+                  <Power className="h-4 w-4" />
+                  Shut down
                 </DropdownMenuItem>
               </>
             )}
