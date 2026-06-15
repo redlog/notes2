@@ -54,6 +54,20 @@ function getDb(): Database.Database {
   return db;
 }
 
+/**
+ * Checkpoints the WAL into the main database file and closes the
+ * connection. Called on process shutdown (SIGINT/SIGTERM/exit) so the
+ * -wal and -shm files don't linger after the app stops.
+ */
+export function shutdownDb(): void {
+  const db = globalForDb.sqliteDb;
+  if (!db) return;
+
+  db.pragma("wal_checkpoint(TRUNCATE)");
+  db.close();
+  globalForDb.sqliteDb = undefined;
+}
+
 // ── Schema ────────────────────────────────────────────────────────────────────
 
 function initSchema(db: Database.Database) {
