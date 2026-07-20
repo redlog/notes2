@@ -60,7 +60,7 @@ export interface NotesDataProvider {
     projectId: string,
     query: string,
     limit?: number
-  ): Promise<{ id: number; title: string }[]>;
+  ): Promise<{ id: number; title: string; created_at: string }[]>;
   getEarliestNoteDate(projectId: string): Promise<string | null>;
   getTaglines(
     projectId: string,

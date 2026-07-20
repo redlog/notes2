@@ -724,9 +724,13 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
     async searchTitles(projectId, query, limit = 25) {
       return db
         .prepare(
-          "SELECT id, title FROM notes WHERE project_id = ? AND title LIKE ? LIMIT ?"
+          "SELECT id, title, created_at FROM notes WHERE project_id = ? AND title LIKE ? LIMIT ?"
         )
-        .all(projectId, `%${query}%`, limit) as { id: number; title: string }[];
+        .all(projectId, `%${query}%`, limit) as {
+        id: number;
+        title: string;
+        created_at: string;
+      }[];
     },
 
     async getEarliestNoteDate(projectId): Promise<string | null> {
