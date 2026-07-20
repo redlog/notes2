@@ -647,10 +647,10 @@ export async function searchTitles(
   projectId: string,
   query: string,
   limit = 25
-): Promise<{ id: number; title: string }[]> {
+): Promise<{ id: number; title: string; created_at: string }[]> {
   const { data, error } = await supabase
     .from("notes")
-    .select("id, title")
+    .select("id, title, created_at")
     .eq("project_id", projectId)
     .ilike("title", `%${query}%`)
     .limit(limit);

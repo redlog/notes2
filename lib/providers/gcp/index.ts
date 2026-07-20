@@ -485,10 +485,13 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
 
     async searchTitles(projectId, query, limit = 25) {
       const { rows } = await db.query(
-        "SELECT id, title FROM notes WHERE project_id = $1 AND title ILIKE $2 LIMIT $3",
+        "SELECT id, title, created_at FROM notes WHERE project_id = $1 AND title ILIKE $2 LIMIT $3",
         [projectId, `%${query}%`, limit]
       );
-      return rows as { id: number; title: string }[];
+      return rows.map((r) => ({
+        ...r,
+        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+      })) as { id: number; title: string; created_at: string }[];
     },
 
     async getEarliestNoteDate(projectId): Promise<string | null> {

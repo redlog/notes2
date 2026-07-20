@@ -8,11 +8,20 @@ import { Button } from "./ui/button";
 interface Result {
   id: number;
   title: string;
+  created_at: string;
 }
 
 interface Props {
   onInsert: (text: string) => void;
   onClose: () => void;
+}
+
+function fmt(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 export default function NoteLinkSearch({ onInsert, onClose }: Props) {
@@ -58,9 +67,10 @@ export default function NoteLinkSearch({ onInsert, onClose }: Props) {
             <li key={r.id}>
               <button
                 onClick={() => onInsert(`note:${r.id}`)}
-                className="w-full text-left text-sm px-2 py-1.5 hover:bg-accent rounded-sm transition-colors truncate"
+                className="w-full flex items-baseline justify-between gap-2 text-left text-sm px-2 py-1.5 hover:bg-accent rounded-sm transition-colors"
               >
-                {r.title}
+                <span className="truncate">{r.title}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{fmt(r.created_at)}</span>
               </button>
             </li>
           ))}
