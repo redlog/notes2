@@ -4,7 +4,8 @@ import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 import Header from "@/components/Header";
 import { renderMarkdown } from "@/lib/markdown";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import TaglineTable from "@/components/TaglineTable";
+import { ArrowLeft, ChevronLeft, ChevronRight, Braces } from "lucide-react";
 
 const PAGE_SIZE = 25;
 
@@ -40,6 +41,18 @@ export default async function TaglinePage({
   );
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  const rows = lines.map((line) => ({
+    noteId: line.noteId,
+    noteTitle: line.noteTitle,
+    noteCreatedAt: line.noteCreatedAt,
+    line: line.line,
+    lineHtml: renderMarkdown(line.line),
+  }));
+
+  const jsonHref = `/api/tagline/${tag}${
+    sp.project ? `?project=${encodeURIComponent(sp.project)}` : ""
+  }`;
+
   function pageHref(p: number) {
     const params = new URLSearchParams();
     if (sp.project) params.set("project", sp.project);
@@ -56,7 +69,7 @@ export default async function TaglinePage({
         userEmail={user.email}
         localMode={process.env.PROVIDER === "sqlite"}
       />
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
         <Link
           href="/"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-5 transition-colors"
@@ -73,6 +86,13 @@ export default async function TaglinePage({
           <span className="text-sm text-muted-foreground">
             {total} {total === 1 ? "line" : "lines"}
           </span>
+          <a
+            href={jsonHref}
+            className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Braces className="h-3.5 w-3.5" />
+            JSON
+          </a>
         </div>
 
         {total === 0 ? (
@@ -81,31 +101,7 @@ export default async function TaglinePage({
           </p>
         ) : (
           <>
-            <div className="space-y-4">
-              {lines.map((line, idx) => (
-                <div key={idx} className="rounded-lg border border-border/60 bg-card p-4">
-                  <div className="flex items-baseline gap-2 mb-2">
-                    <Link
-                      href={`/note/${line.noteId}`}
-                      className="text-sm font-medium text-primary hover:underline"
-                    >
-                      {line.noteTitle}
-                    </Link>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(line.noteCreatedAt).toLocaleDateString(undefined, {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </span>
-                  </div>
-                  <div
-                    className="note-body text-sm text-foreground/90"
-                    dangerouslySetInnerHTML={{ __html: renderMarkdown(line.line) }}
-                  />
-                </div>
-              ))}
-            </div>
+            <TaglineTable rows={rows} />
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-6 pt-4 border-t border-border/60">
