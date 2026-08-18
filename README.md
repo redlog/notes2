@@ -234,11 +234,22 @@ Notes saved after that are indexed automatically.
 That is why the setting is per project and off by default — in local SQLite
 mode especially, it is a real change from the app being entirely offline.
 
-**Keeping it current:** on Vercel, the cron entry in `vercel.json` runs the
-embedding drain every five minutes (set `CRON_SECRET` so it can authenticate).
-Elsewhere, the **Build index** button does the same work on demand. The config
-page shows how many chunks are still waiting — if that number never reaches
-zero, the drain is failing; check the server log for `[drain]`.
+**Keeping it current** — three mechanisms, because no single one covers every
+deployment:
+
+| Where | What runs the drain |
+|---|---|
+| Any deployment | Saving a note embeds what that save queued, just after the response is sent |
+| Vercel | The cron in `vercel.json`, **once a day** — Hobby plan allows no more (set `CRON_SECRET` so it can authenticate) |
+| Local / self-hosted | A timer in the server process, every 180s by default (`EMBED_DRAIN_INTERVAL_SECONDS`) |
+
+The per-save drain is what makes a daily cron acceptable: a note you edit is
+searchable by meaning within seconds, not at the next nightly tick. The cron and
+the local timer are the safety net that catches whatever a save missed — a
+Voyage blip, a bulk import, a project switched on with a back catalogue.
+
+The config page shows how many chunks are still waiting. If that number never
+reaches zero, the drain is failing; check the server log for `[drain]`.
 
 **Changing the embedding model:** set `VOYAGE_MODEL`, then use *Rebuild from
 scratch*. Chunks embedded by a previous model are ignored at query time rather

@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
-import { syncNoteChunks } from "@/lib/semantic";
+import { semanticEnabled, syncNoteChunks } from "@/lib/semantic";
+import { drainOnce } from "@/lib/drain";
 
 const MAX_BODY_BYTES = 500_000;
 const MAX_TAGS = 200;
@@ -68,6 +69,23 @@ export async function PUT(
       : null;
     if (note && project) {
       await syncNoteChunks(provider, noteId, project, title, body, note.created_at);
+
+      // Embed what that just queued, *after* the response is sent.
+      //
+      // This is what keeps the index fresh on Vercel's Hobby plan, where cron
+      // may only run once a day — waiting for the nightly tick would leave a
+      // note unsearchable by meaning for up to 24 hours. after() runs the work
+      // without holding the response, so the save is as fast as it ever was and
+      // a Voyage outage still cannot fail it.
+      //
+      // Bounded to one batch on purpose: this is opportunistic top-up, not a
+      // backfill. Anything left over is picked up by the cron, the local
+      // ticker, or the Settings button.
+      if (semanticEnabled(project)) {
+        after(async () => {
+          await drainOnce(provider, { projectId: project.id });
+        });
+      }
     }
   }
 
