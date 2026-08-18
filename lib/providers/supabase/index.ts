@@ -5,6 +5,7 @@
 import { createClient } from "@/lib/supabase/server";
 import * as notesLib from "@/lib/notes";
 import * as projectsLib from "@/lib/projects";
+import * as chunksLib from "@/lib/chunks";
 import type { DataProvider } from "../types";
 
 export async function createSupabaseProvider(): Promise<DataProvider> {
@@ -187,6 +188,26 @@ export async function createSupabaseProvider(): Promise<DataProvider> {
         );
         return { updated_at: now };
       },
+    },
+
+    chunks: {
+      sync: (noteId, projectId, chunks) =>
+        chunksLib.syncChunks(supabase, noteId, projectId, chunks),
+
+      notesToChunk: (projectId, afterId, limit) =>
+        chunksLib.notesToChunk(supabase, projectId, afterId, limit),
+
+      pending: (limit, projectId) =>
+        chunksLib.pendingChunks(supabase, limit, projectId),
+
+      writeEmbeddings: (rows, model, dim) =>
+        chunksLib.writeEmbeddings(supabase, rows, model, dim),
+
+      pendingCount: (projectId) => chunksLib.pendingChunkCount(supabase, projectId),
+
+      related: (noteId, limit) => chunksLib.relatedNotes(supabase, noteId, limit),
+
+      clearEmbeddings: (projectId) => chunksLib.clearEmbeddings(supabase, projectId),
     },
   };
 }

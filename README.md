@@ -201,6 +201,51 @@ This is always the fallback if no cookie is set. You can rename it in Settings.
 | `NEXT_PUBLIC_SUPABASE_URL` | Cloud only | — | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cloud only | — | Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Migration only | — | Used by `scripts/migrate.mjs` (Supabase migration) |
+| `VOYAGE_API_KEY` | No | — | Enables semantic search. Without it the app runs keyword-only |
+| `VOYAGE_MODEL` | No | `voyage-3.5-lite` | Embedding model. Changing it requires a full rebuild |
+| `VOYAGE_DIM` | No | `1024` | Embedding dimensions. Changing it also requires a migration |
+| `CRON_SECRET` | No | — | Authenticates the scheduled embedding drain (`vercel.json`) |
+
+---
+
+## Semantic search (optional)
+
+Off by default. With it on, search matches on meaning as well as words, and the
+note view gains a "Related notes" panel. Keyword search remains the baseline and
+is unaffected — the two rankings are fused, so a note matching both ranks above
+one matching either.
+
+**Setup:**
+
+1. Get an API key from [voyageai.com](https://voyageai.com) and set
+   `VOYAGE_API_KEY`. The free tier is 200M tokens; a full index of ~5,000 notes
+   is around 2M, so cost is not a practical concern at personal scale.
+2. **Cloud mode:** apply `supabase/migrations/006_note_chunks.sql`. It needs the
+   `vector` extension, which Supabase provides. On GCP/Cloud SQL, enable
+   pgvector and apply migrations `005` and `006` by hand.
+   **Local SQLite mode:** nothing to do — the tables are created on startup.
+3. In **Settings → your project**, switch on *Semantic search* and press
+   **Build index**. Progress is shown as it runs; it is resumable, so closing
+   the page mid-run loses no work.
+
+Notes saved after that are indexed automatically.
+
+**What leaves your machine:** note text is sent to Voyage AI to be embedded.
+That is why the setting is per project and off by default — in local SQLite
+mode especially, it is a real change from the app being entirely offline.
+
+**Keeping it current:** on Vercel, the cron entry in `vercel.json` runs the
+embedding drain every five minutes (set `CRON_SECRET` so it can authenticate).
+Elsewhere, the **Build index** button does the same work on demand. The config
+page shows how many chunks are still waiting — if that number never reaches
+zero, the drain is failing; check the server log for `[drain]`.
+
+**Changing the embedding model:** set `VOYAGE_MODEL`, then use *Rebuild from
+scratch*. Chunks embedded by a previous model are ignored at query time rather
+than compared against incompatible vectors, so search degrades to keyword-only
+during the rebuild instead of returning nonsense.
+
+Design notes and rationale: [`docs/vector-search-and-rag.md`](docs/vector-search-and-rag.md).
 
 ---
 

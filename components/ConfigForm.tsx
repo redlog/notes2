@@ -7,7 +7,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
 import { Separator } from "./ui/separator";
-import { Save, Plus, Trash2, Check, AlertTriangle, User, FolderOpen, Download, Upload } from "lucide-react";
+import { AlertTriangle, Check, Download, FolderOpen, Plus, RefreshCw, Save, Trash2, Upload, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -16,6 +16,8 @@ interface Props {
   settings: UserSettings;
   userEmail: string;
   userId: string;
+  pendingChunks: number;
+  embeddingConfigured: boolean;
 }
 
 // ─── User Settings Panel ──────────────────────────────────────────────────────
@@ -259,13 +261,23 @@ function ExportImportPanel({ projectId }: { projectId: string }) {
 function ProjectSettingsPanel({
   project,
   projects,
+  pendingChunks,
+  embeddingConfigured,
 }: {
   project: Project;
   projects: Project[];
+  /**
+   * Surfaced because a stalled drain returns *plausible* results (stale ones)
+   * rather than failing — the count is the only way it becomes visible.
+   */
+  pendingChunks: number;
+  embeddingConfigured: boolean;
 }) {
   const router = useRouter();
   const [projectName, setProjectName] = useState(project.name);
-  const [trigramSearch, setTrigramSearch] = useState(project.trigram_search);
+  const [vectorSearch, setVectorSearch] = useState(project.vector_search);
+  const [reindexing, setReindexing] = useState(false);
+  const [indexProgress, setIndexProgress] = useState("");
   const [clearConfirm, setClearConfirm] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [clearing, setClearing] = useState(false);
@@ -280,7 +292,7 @@ function ProjectSettingsPanel({
       body: JSON.stringify({
         projectId: project.id,
         name: projectName,
-        trigram_search: trigramSearch,
+        vector_search: vectorSearch,
       }),
     });
     setSaving(false);
@@ -289,6 +301,71 @@ function ProjectSettingsPanel({
       router.refresh();
     } else {
       setMsg("Save failed.");
+    }
+  }
+
+  /**
+   * Builds (or rebuilds) the semantic index.
+   *
+   * Driven from the browser in two loops rather than one long server request:
+   * chunking walks the whole back catalogue and embedding is rate-limited by
+   * Voyage, so a single server call would blow past a serverless timeout on any
+   * real corpus. Each request here is small and the loop is resumable — the
+   * queue lives in the database, so closing this page mid-run loses nothing.
+   */
+  async function rebuildIndex(reembedExisting: boolean) {
+    setReindexing(true);
+    setIndexProgress("Preparing…");
+
+    try {
+      if (reembedExisting) {
+        const res = await fetch("/api/reindex", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: project.id }),
+        });
+        if (!res.ok) throw new Error("Could not clear existing embeddings");
+      }
+
+      // 1. Chunk every note, one page at a time.
+      let afterId = 0;
+      let notesSeen = 0;
+      for (;;) {
+        const res = await fetch("/api/backfill-chunks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: project.id, afterId }),
+        });
+        if (!res.ok) throw new Error("Chunking failed");
+        const data = await res.json();
+        notesSeen += data.processed;
+        afterId = data.lastId;
+        setIndexProgress(`Scanned ${notesSeen} note${notesSeen === 1 ? "" : "s"}…`);
+        if (data.done) break;
+      }
+
+      // 2. Drain the queue until it is empty.
+      let embedded = 0;
+      for (;;) {
+        const res = await fetch(
+          `/api/embed-drain?project=${encodeURIComponent(project.id)}`,
+          { method: "POST" }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Embedding failed");
+        if (!data.embedded) break;
+        embedded += data.embedded;
+        setIndexProgress(`Embedded ${embedded} chunk${embedded === 1 ? "" : "s"}…`);
+      }
+
+      setIndexProgress("");
+      setMsg(embedded ? `Indexed ${embedded} chunks.` : "Index already up to date.");
+    } catch (err) {
+      setIndexProgress("");
+      setMsg(err instanceof Error ? err.message : "Indexing failed.");
+    } finally {
+      setReindexing(false);
+      router.refresh();
     }
   }
 
@@ -354,12 +431,60 @@ function ProjectSettingsPanel({
             />
           </div>
 
-          <div className="flex items-center justify-between max-w-sm">
-            <div>
-              <p className="text-sm font-medium">Trigram search</p>
-              <p className="text-xs text-muted-foreground">Enables partial-word matching</p>
+          <div className="max-w-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="pr-4">
+                <p className="text-sm font-medium">Semantic search</p>
+                <p className="text-xs text-muted-foreground">
+                  Finds notes by meaning as well as by word, and enables the
+                  &ldquo;Related notes&rdquo; panel. Note text is sent to Voyage
+                  AI to be embedded.
+                </p>
+              </div>
+              <Switch checked={vectorSearch} onCheckedChange={setVectorSearch} />
             </div>
-            <Switch checked={trigramSearch} onCheckedChange={setTrigramSearch} />
+
+            {vectorSearch && (
+              <div className="rounded-md border border-border/60 bg-muted/30 px-3 py-2 space-y-2">
+                {!embeddingConfigured ? (
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">Not active:</span>{" "}
+                    VOYAGE_API_KEY is not set on the server, so nothing is being
+                    embedded and search stays keyword-only.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {pendingChunks === 0
+                      ? "All notes embedded."
+                      : `${pendingChunks} chunk${pendingChunks === 1 ? "" : "s"} waiting to be embedded.`}
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={() => rebuildIndex(false)}
+                    disabled={reindexing || !embeddingConfigured}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} />
+                    {reindexing ? "Working…" : "Build index"}
+                  </Button>
+                  <Button
+                    onClick={() => rebuildIndex(true)}
+                    disabled={reindexing || !embeddingConfigured}
+                    variant="ghost"
+                    size="sm"
+                    title="Discards existing embeddings and recomputes them — needed after changing the embedding model."
+                  >
+                    Rebuild from scratch
+                  </Button>
+                </div>
+                {indexProgress && (
+                  <p className="text-xs text-muted-foreground">{indexProgress}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -445,7 +570,15 @@ function ProjectSettingsPanel({
 
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
-export default function ConfigForm({ projects, activeProject, settings, userEmail, userId }: Props) {
+export default function ConfigForm({
+  projects,
+  activeProject,
+  settings,
+  userEmail,
+  userId,
+  pendingChunks,
+  embeddingConfigured,
+}: Props) {
   const router = useRouter();
   const [selectedTab, setSelectedTab] = useState<"user" | string>("user");
   const [newProjectName, setNewProjectName] = useState("");
@@ -536,6 +669,8 @@ export default function ConfigForm({ projects, activeProject, settings, userEmai
             key={selectedProject.id}
             project={selectedProject}
             projects={projects}
+            pendingChunks={selectedProject.id === activeProject.id ? pendingChunks : 0}
+            embeddingConfigured={embeddingConfigured}
           />
         ) : null}
       </main>

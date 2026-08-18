@@ -131,14 +131,34 @@ The main list view always has a search bar and filter bar visible at the top.
 
 ### 5.1 Full-Text Search
 - The user types a query into the search box and presses Enter (or submits the form).
-- The search engine matches the query against the full text of all note bodies in the active project.
-- **Partial-word matching** is supported: searching "test" will find "testing" and "untested".
+- The search engine matches the query against the title and body of all notes in the active project.
+- **Whole-word matching only.** English stemming means "test" finds "testing" and "tested", but *not* "untested" — a prefix or infix of a word is not a match. There is no partial-word (substring) search.
 - **Multi-word queries**: all terms must match (implicit AND).
 - **Stopwords** (common words: the, a, is, it, etc.) are excluded from indexing and ignored in queries.
-- Results are returned ranked by relevance (search score).
-- When a search is active, the default sort order changes to "Relevance" (highest score first). The user can override this.
+- Results are returned ranked by relevance (search score) — see §12.3.
+- When a search is active, the default sort order changes to "Relevance" (best match first). The user can override this.
 - The search is case-insensitive.
 - Clearing the search box and resubmitting returns to the full note list.
+
+### 5.1a Semantic Search (optional, per project)
+- When **Semantic search** is enabled for a project and a Voyage AI API key is
+  configured, the relevance sort also matches on *meaning*, not only on words —
+  so "the meeting where we decided to delay the platform migration" can find a
+  note that says "agreed to postpone the big move until Q3".
+- Keyword and semantic results are combined by Reciprocal Rank Fusion; a note
+  matching both ranks above one matching either. Notes below a similarity
+  threshold are not included at all, so "no semantic match" is a real outcome.
+- It is **additive**: with the setting off, or with no API key, search behaves
+  exactly as described above. Keyword search remains the backstop for the things
+  embeddings are bad at — project codenames, ticket IDs, surnames.
+- Note text is sent to Voyage AI to be embedded, which is why it is off by
+  default and per project rather than global. See §12.4.
+
+**Query syntax differs by backend.** The Postgres backends (Supabase, GCP) use
+`websearch_to_tsquery`, which additionally supports `"quoted phrases"`, `or`, and
+`-negation`. The SQLite backend strips punctuation from the query before handing
+it to FTS5, so those operators are silently discarded there and every query
+becomes an implicit AND. Unifying this is open work.
 
 ### 5.2 Tag and People Filtering
 - Filters are applied via a filter bar or by clicking tag/people links throughout the UI.
@@ -330,27 +350,79 @@ The main list view always has a search bar and filter bar visible at the top.
 
 ### 11.3 Per-Project Settings
 - Project name (editable)
-- Trigram (partial-word) search enabled/disabled (default: enabled)
+- Semantic search enabled/disabled (default: **disabled**). Enabling sends note
+  text to Voyage AI for embedding; the setting says so. Shows the number of
+  chunks still waiting to be embedded, and offers **Build index** (index
+  anything not yet indexed) and **Rebuild from scratch** (discard and recompute
+  every embedding — needed after changing the embedding model).
 
 ---
 
 ## 12. Search Index
 
 ### 12.1 How Indexing Works
-- The search index is built automatically when notes are created, edited, or deleted.
-- Full-text indexing covers the note body, title, tags, and people.
-- Stopwords are excluded.
-- URLs, HTML comments, and bare numbers are stripped before indexing.
-- When trigram search is enabled, words are indexed as character-level trigrams, enabling substring matching.
+- There is no separate index to build or maintain. On Postgres the index is a
+  `tsvector` generated column on `notes`, recomputed by the database whenever a
+  row changes; on SQLite it is an FTS5 virtual table written alongside each note
+  save. Both are kept current automatically.
+- Full-text indexing covers the note **title and body**.
+- **Tags and people are deliberately not part of the search index.** They are
+  filter dimensions, not query terms: the `#tag` / `@person` filter tokens match
+  them exactly, which is strictly better than stemmed free-text matching would
+  be. (Where a tag or person is *written into the body*, it indexes incidentally
+  as an ordinary word — `to_tsvector` strips the sigil — but that is a
+  side-effect of indexing body text, not a feature to rely on.)
+- Stopwords are excluded. HTML comments are skipped by the Postgres text parser.
+- URLs and bare numbers **are** indexed, not stripped: `to_tsvector` emits host,
+  path, and numeric tokens for them.
 
 ### 12.2 Manual Reindex
-- A "Reindex" action (available from the header or settings page) rebuilds the full search index for the active project from scratch.
-- This is useful if the index becomes inconsistent.
+- The keyword index still needs no reindex — both backends maintain it inside
+  the write, so there is no drift to repair.
+- The **semantic** index does, and this is where the action lives: it is a
+  stored table of embeddings, so a model change, an interrupted backfill, or a
+  chunk sync that failed after a save can leave it out of step with the notes.
+- **Build index** walks any notes that have not been chunked and embeds whatever
+  is queued. **Rebuild from scratch** additionally discards existing embeddings
+  first. Both run from the project settings page and are resumable — the queue
+  lives in the database, so interrupting them loses no work.
 
 ### 12.3 Search Result Scoring
-- Results are scored by TF-IDF (term frequency × inverse document frequency), normalized by document length.
-- Higher scores indicate more relevant notes.
-- Scores are displayed in the list when a search is active and sorting by relevance.
+- Higher scores indicate more relevant notes. Scores are displayed in the list
+  when a search is active and sorting by relevance.
+- The underlying ranking function differs by backend: Postgres uses
+  `ts_rank_cd` (cover density — term frequency weighted by how closely the
+  query terms sit together), SQLite uses `bm25()`. Neither is TF-IDF exactly,
+  and their raw values are not comparable to each other.
+- So the raw value is never shown. Every backend normalises to **0..1 against
+  the best match in the whole result set**, meaning the top hit always reads
+  1.000 and everything else is a fraction of it. Normalising against the whole
+  match set rather than the current page keeps the number stable across
+  pagination.
+
+### 12.4 Semantic Index
+- Applies only when semantic search is enabled for the project.
+- Notes are split into chunks — one per top-level bullet or heading, with nested
+  content kept together. Chunks too small to retrieve well are merged into their
+  neighbour; oversized ones are split.
+- Each chunk is embedded with a short context header (note title and date) so a
+  bare bullet keeps its anchor. Tags and people are excluded, for the same
+  reason they are excluded from the keyword index (§12.1).
+- **Saving a note never waits on the embedding service.** The save re-chunks and
+  compares content hashes, then queues only what changed; embedding happens in
+  the background. Editing one bullet of a thirty-bullet note re-embeds one
+  chunk. If the embedding service is unavailable, search results go stale —
+  saving still works.
+- Chunks record which model produced them, and chunks from a different model are
+  ignored at query time rather than compared against incompatible vectors.
+
+### 12.5 Related Notes
+- The note view sidebar shows notes semantically closest to the one being read,
+  beside the existing "What links here" panel — the links you wrote versus the
+  ones you didn't.
+- Requires semantic search to be enabled; the panel is absent otherwise, and
+  absent when nothing clears the similarity threshold.
+
 
 ---
 
@@ -380,6 +452,7 @@ This is a key distinction maintained from v1.
 | File-based note locking (`.lock` files) | **Removed.** Replaced by version-based optimistic concurrency. |
 | `filelock`-based index locking | **Removed.** Database handles concurrent access natively. |
 | Index stored as `index.json` | **Removed.** Database-backed search index. |
+| Trigram / partial-word (substring) search | **Removed.** Postgres FTS and FTS5 match whole words (with stemming). The `trigram_search` project setting that claimed to control this never had an implementation behind it and has been dropped. |
 | Per-note Unix timestamp filenames as IDs | **Replaced.** Server-assigned IDs (database primary keys). |
 | Multi-project stored as separate directories | **Replaced.** Projects are database records. |
 | `/exit_cleanly` shutdown endpoint | **Removed.** Cloud-hosted server has no shutdown endpoint. |
