@@ -98,7 +98,7 @@ export interface ProjectsDataProvider {
   create(userId: string, name: string): Promise<Project>;
   update(
     projectId: string,
-    updates: Partial<Pick<Project, "name" | "trigram_search">>
+    updates: Partial<Pick<Project, "name">>
   ): Promise<void>;
   delete(projectId: string): Promise<void>;
   checkOwner(projectId: string): Promise<string | null>;

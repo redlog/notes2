@@ -8,6 +8,9 @@ import type {
   ListResult,
   Note,
   NoteListItem,
+  NotePerson,
+  NoteTag,
+  SortKey,
   TagCount,
   PersonCount,
   GalleryImage,
@@ -42,6 +45,18 @@ export function extractTitle(body: string): string {
   return match ? match[1].trim() : "(untitled)";
 }
 
+// ── Date range helper ─────────────────────────────────────────────────────────
+
+/**
+ * Callers pass a calendar date for `timeMax` but the column is a timestamp,
+ * so an inclusive end-of-range means "< the following midnight".
+ */
+export function exclusiveEnd(timeMax: string): string {
+  const end = new Date(timeMax);
+  end.setDate(end.getDate() + 1);
+  return end.toISOString();
+}
+
 // ── Body preview ──────────────────────────────────────────────────────────────
 
 export function buildPreview(body: string): string {
@@ -57,6 +72,21 @@ export function buildPreview(body: string): string {
 }
 
 // ── List notes ────────────────────────────────────────────────────────────────
+
+/** One row of search_notes_ranked() — see supabase/migrations/005_search_ranking.sql. */
+interface RankedNoteRow {
+  out_id: number;
+  out_title: string;
+  out_body: string;
+  out_created_at: string;
+  out_updated_at: string;
+  out_tags: NoteTag[] | null;
+  out_people: NotePerson[] | null;
+  /** 0..1, normalised against the top match of the whole result set. */
+  out_score: number;
+  /** Window-function count over the whole match set; identical on every row. */
+  out_total: number;
+}
 
 export async function listNotes(
   supabase: SupabaseClient,
@@ -75,6 +105,16 @@ export async function listNotes(
   } = params;
 
   const offset = (page - 1) * perPage;
+
+  // ── Resolve the sort actually applied ─────────────────────────────────────
+  // `relevance` only means something when there is a search term to rank
+  // against. Guard it unconditionally: with `sk=relevance` and no search
+  // (a bookmarked URL, back-navigation, or /api/export?sk=relevance) the
+  // fallback below is what keeps `ORDER BY relevance` — a column that does
+  // not exist — from reaching Postgres.
+  const useRelevance = sortKey === "relevance" && search.trim() !== "";
+  const dateSortKey = sortKey === "relevance" ? "created_at" : sortKey;
+  const appliedSortKey: SortKey = useRelevance ? "relevance" : dateSortKey;
 
   // Parse filter tokens
   const filterTokens = filter
@@ -138,7 +178,7 @@ export async function listNotes(
 
     // Short-circuit: no notes match all filters
     if (filterIds.length === 0) {
-      return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+      return { notes: [], total: 0, page, perPage, sortKey: appliedSortKey, sortOrder };
     }
   }
 
@@ -163,11 +203,7 @@ export async function listNotes(
       });
     }
     if (timeMin) candidateQuery = candidateQuery.gte("created_at", timeMin);
-    if (timeMax) {
-      const end = new Date(timeMax);
-      end.setDate(end.getDate() + 1);
-      candidateQuery = candidateQuery.lt("created_at", end.toISOString());
-    }
+    if (timeMax) candidateQuery = candidateQuery.lt("created_at", exclusiveEnd(timeMax));
 
     const { data: candidateData, error: candidateError } = await candidateQuery;
     if (candidateError) throw candidateError;
@@ -205,8 +241,47 @@ export async function listNotes(
 
     filterIds = candidates.map((c) => c.id);
     if (filterIds.length === 0) {
-      return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+      return { notes: [], total: 0, page, perPage, sortKey: appliedSortKey, sortOrder };
     }
+  }
+
+  // ── Relevance path ────────────────────────────────────────────────────────
+  // PostgREST cannot express `ORDER BY ts_rank_cd(...)`, so the ranked query
+  // lives in the search_notes_ranked() RPC (migration 005). It runs SECURITY
+  // INVOKER, so RLS still applies. All filter tokens have already been
+  // resolved into `filterIds` above, so they pass through as a pre-filter.
+  if (useRelevance) {
+    const { data, error } = await supabase.rpc("search_notes_ranked", {
+      p_project_id: projectId,
+      p_search: search,
+      p_filter_ids: filterIds,
+      p_time_min: timeMin ?? null,
+      p_time_max: timeMax ? exclusiveEnd(timeMax) : null,
+      p_sort_order: sortOrder,
+      p_limit: perPage,
+      p_offset: offset,
+    });
+    if (error) throw error;
+
+    const rows = (data ?? []) as RankedNoteRow[];
+    return {
+      notes: rows.map((r) => ({
+        id: r.out_id,
+        title: r.out_title,
+        created_at: r.out_created_at,
+        updated_at: r.out_updated_at,
+        tags: r.out_tags ?? [],
+        people: r.out_people ?? [],
+        score: r.out_score,
+        preview: buildPreview(r.out_body ?? ""),
+      })),
+      // Every row carries the window-function count over the whole match set.
+      total: rows.length > 0 ? Number(rows[0].out_total) : 0,
+      page,
+      perPage,
+      sortKey: appliedSortKey,
+      sortOrder,
+    };
   }
 
   // Build base query with search
@@ -225,7 +300,8 @@ export async function listNotes(
   }
 
   if (search) {
-    // Use websearch_to_tsquery for natural language; fall back to trigram for partial matches
+    // websearch_to_tsquery: supports quoted phrases, `or`, and -negation.
+    // Whole-word matching only — there is no partial-word fallback.
     query = query.textSearch("search_vec", search, {
       type: "websearch",
       config: "english",
@@ -233,17 +309,10 @@ export async function listNotes(
   }
 
   if (timeMin) query = query.gte("created_at", timeMin);
-  if (timeMax) {
-    // Include the full end day
-    const end = new Date(timeMax);
-    end.setDate(end.getDate() + 1);
-    query = query.lt("created_at", end.toISOString());
-  }
+  if (timeMax) query = query.lt("created_at", exclusiveEnd(timeMax));
 
-  const resolvedSortKey =
-    search && sortKey === "relevance" ? "created_at" : sortKey;
   query = query
-    .order(resolvedSortKey, { ascending: sortOrder === "asc" })
+    .order(dateSortKey, { ascending: sortOrder === "asc" })
     .range(offset, offset + perPage - 1);
 
   const { data, count, error } = await query;
@@ -266,7 +335,7 @@ export async function listNotes(
     total: count ?? 0,
     page,
     perPage,
-    sortKey: params.sortKey ?? "created_at",
+    sortKey: appliedSortKey,
     sortOrder,
   };
 }
@@ -409,9 +478,6 @@ export async function getNoteVersion(
 }
 
 // ── Tags and people upsert ────────────────────────────────────────────────────
-
-interface NoteTag { tag: string; is_header: boolean; }
-interface NotePerson { person: string; is_header: boolean; }
 
 async function upsertTagsAndPeople(
   supabase: SupabaseClient,

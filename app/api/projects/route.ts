@@ -24,7 +24,6 @@ export async function PATCH(request: Request) {
   if (body.projectId) {
     await provider.projects.update(body.projectId, {
       name: body.name,
-      trigram_search: body.trigram_search,
     });
   }
 

@@ -108,7 +108,6 @@ function initSchema(db) {
       id             TEXT PRIMARY KEY,
       user_id        TEXT NOT NULL,
       name           TEXT NOT NULL,
-      trigram_search INTEGER NOT NULL DEFAULT 1,
       created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       UNIQUE(user_id, name)
     );

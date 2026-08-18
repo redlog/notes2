@@ -265,7 +265,6 @@ function ProjectSettingsPanel({
 }) {
   const router = useRouter();
   const [projectName, setProjectName] = useState(project.name);
-  const [trigramSearch, setTrigramSearch] = useState(project.trigram_search);
   const [clearConfirm, setClearConfirm] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [clearing, setClearing] = useState(false);
@@ -280,7 +279,6 @@ function ProjectSettingsPanel({
       body: JSON.stringify({
         projectId: project.id,
         name: projectName,
-        trigram_search: trigramSearch,
       }),
     });
     setSaving(false);
@@ -352,14 +350,6 @@ function ProjectSettingsPanel({
               onChange={(e) => setProjectName(e.target.value)}
               className="max-w-sm"
             />
-          </div>
-
-          <div className="flex items-center justify-between max-w-sm">
-            <div>
-              <p className="text-sm font-medium">Trigram search</p>
-              <p className="text-xs text-muted-foreground">Enables partial-word matching</p>
-            </div>
-            <Switch checked={trigramSearch} onCheckedChange={setTrigramSearch} />
           </div>
         </div>
 

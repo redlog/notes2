@@ -16,7 +16,7 @@ import { cookies } from "next/headers";
 import { mkdirSync } from "fs";
 import { unlink } from "fs/promises";
 import { join, dirname } from "path";
-import { extractMentions, extractNoteRefs, buildPreview } from "@/lib/notes";
+import { extractMentions, extractNoteRefs, buildPreview, exclusiveEnd } from "@/lib/notes";
 import { getLocalDbPath, getLocalImagesDir } from "@/lib/local-storage";
 import type { DataProvider, NotesDataProvider, ProjectsDataProvider, BiosDataProvider } from "../types";
 import type {
@@ -25,6 +25,7 @@ import type {
   Note,
   NoteImage,
   NoteListItem,
+  SortKey,
   GalleryImage,
   TagCount,
   PersonCount,
@@ -83,7 +84,6 @@ function initSchema(db: Database.Database) {
       id             TEXT PRIMARY KEY,
       user_id        TEXT NOT NULL,
       name           TEXT NOT NULL,
-      trigram_search INTEGER NOT NULL DEFAULT 1,
       created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       UNIQUE(user_id, name)
     );
@@ -277,13 +277,14 @@ type NoteRow = {
   version: number;
   created_at: string;
   updated_at: string;
+  /** Only present on the relevance path — raw bm25(), negative, lower is better. */
+  raw_score?: number;
 };
 
 type ProjectRow = {
   id: string;
   user_id: string;
   name: string;
-  trigram_search: number;
   created_at: string;
 };
 
@@ -292,7 +293,6 @@ function projectRowToProject(row: ProjectRow): Project {
     id: row.id,
     user_id: row.user_id,
     name: row.name,
-    trigram_search: !!row.trigram_search,
     created_at: row.created_at,
   };
 }
@@ -314,6 +314,17 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         timeMax,
       } = params;
       const offset = (page - 1) * perPage;
+
+      // ── Resolve the sort actually applied ───────────────────────────────
+      // `relevance` is bm25() over the FTS match, not a column, so it only
+      // means something when there is a search term to rank against. Guard it
+      // unconditionally: with `sk=relevance` and no search (a bookmarked URL,
+      // back-navigation, or /api/export?sk=relevance) the fallback is what
+      // keeps `ORDER BY relevance` from reaching SQLite as a bare column.
+      const ftsQuery = search ? buildFtsQuery(search) : "";
+      const useRelevance = sortKey === "relevance" && ftsQuery !== "";
+      const dateSortKey = sortKey === "relevance" ? "created_at" : sortKey;
+      const appliedSortKey: SortKey = useRelevance ? "relevance" : dateSortKey;
 
       // Parse filter tokens
       const filterTokens = filter.split(/[\s,]+/).map((t) => t.trim()).filter(Boolean);
@@ -350,7 +361,7 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
 
         filterIds = [...(ids ?? new Set<number>())];
         if (filterIds.length === 0) {
-          return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+          return { notes: [], total: 0, page, perPage, sortKey: appliedSortKey, sortOrder };
         }
       }
 
@@ -365,12 +376,9 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         const baseConditions: string[] = ["n.project_id = ?"];
         const baseValues: unknown[] = [projectId];
 
-        if (search) {
-          const ftsQ = buildFtsQuery(search);
-          if (ftsQ) {
-            baseConditions.push("n.id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)");
-            baseValues.push(ftsQ);
-          }
+        if (ftsQuery) {
+          baseConditions.push("n.id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)");
+          baseValues.push(ftsQuery);
         }
         if (filterIds !== null) {
           baseConditions.push(`n.id IN (${filterIds.map(() => "?").join(",")})`);
@@ -389,7 +397,7 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         ).map((r) => r.id);
 
         if (candidateIds.length === 0) {
-          return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+          return { notes: [], total: 0, page, perPage, sortKey: appliedSortKey, sortOrder };
         }
 
         const cph = candidateIds.map(() => "?").join(",");
@@ -436,53 +444,94 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         });
 
         if (filterIds.length === 0) {
-          return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+          return { notes: [], total: 0, page, perPage, sortKey: appliedSortKey, sortOrder };
         }
       }
 
-      // Build WHERE clause
-      const conditions: string[] = ["n.project_id = ?"];
-      const values: unknown[] = [projectId];
+      // ── Build WHERE clause ────────────────────────────────────────────────
+      // The FTS predicate is held separately from the rest: the ranked path
+      // joins notes_fts directly (FTS5 exposes bm25() only on the matched
+      // table, and rejects table aliases), while every other path keeps the
+      // cheaper `id IN (subquery)` form.
+      const restConditions: string[] = ["n.project_id = ?"];
+      const restValues: unknown[] = [projectId];
 
-      if (search) {
-        const ftsQ = buildFtsQuery(search);
-        if (ftsQ) {
-          conditions.push("n.id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)");
-          values.push(ftsQ);
-        }
-      }
       if (filterIds !== null) {
-        conditions.push(`n.id IN (${filterIds.map(() => "?").join(",")})`);
-        values.push(...filterIds);
+        restConditions.push(`n.id IN (${filterIds.map(() => "?").join(",")})`);
+        restValues.push(...filterIds);
       }
-      if (timeMin) { conditions.push("n.created_at >= ?"); values.push(timeMin); }
+      if (timeMin) { restConditions.push("n.created_at >= ?"); restValues.push(timeMin); }
       if (timeMax) {
-        const end = new Date(timeMax);
-        end.setDate(end.getDate() + 1);
-        conditions.push("n.created_at < ?");
-        values.push(end.toISOString());
+        restConditions.push("n.created_at < ?");
+        restValues.push(exclusiveEnd(timeMax));
       }
 
-      const where = conditions.join(" AND ");
-      const effectiveSortKey =
-        search && sortKey === "relevance" ? "created_at" : sortKey;
       const dir = sortOrder === "asc" ? "ASC" : "DESC";
+
+      const where = [
+        ...(ftsQuery ? ["n.id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)"] : []),
+        ...restConditions,
+      ].join(" AND ");
+      const values = [...(ftsQuery ? [ftsQuery] : []), ...restValues];
 
       const total = (
         db.prepare(`SELECT COUNT(*) AS cnt FROM notes n WHERE ${where}`).get(...values) as { cnt: number }
       ).cnt;
 
-      const rows = db
-        .prepare(
-          `SELECT id, title, body, created_at, updated_at FROM notes n
-           WHERE ${where}
-           ORDER BY n.${effectiveSortKey} ${dir}
-           LIMIT ? OFFSET ?`
-        )
-        .all(...values, perPage, offset) as NoteRow[];
+      let rows: NoteRow[];
+      // Most-negative bm25 across the whole match set, used to normalise.
+      let bestScore = 0;
+
+      if (useRelevance) {
+        const rankedWhere = ["notes_fts MATCH ?", ...restConditions].join(" AND ");
+        const rankedValues = [ftsQuery, ...restValues];
+
+        // The normalisation anchor is the best score in the *whole* match set,
+        // not the page. It has to be read with ORDER BY + LIMIT 1 rather than
+        // MIN(): FTS5 refuses bm25() inside an aggregate ("unable to use
+        // function bm25 in the requested context"). This form is cheaper too.
+        // Always ASC — the anchor is the best match regardless of sortOrder.
+        bestScore = Number(
+          (
+            db
+              .prepare(
+                `SELECT bm25(notes_fts) AS best
+                   FROM notes n JOIN notes_fts ON notes_fts.rowid = n.id
+                  WHERE ${rankedWhere}
+                  ORDER BY best ASC
+                  LIMIT 1`
+              )
+              .get(...rankedValues) as { best: number | null } | undefined
+          )?.best ?? 0
+        );
+
+        // bm25() returns *negative* numbers where smaller is better, so
+        // best-first is ASC — the inverse of the ts_rank ordering the Postgres
+        // providers use. Tiebreak on id so LIMIT/OFFSET pagination cannot
+        // repeat or skip rows when scores are equal.
+        rows = db
+          .prepare(
+            `SELECT n.id, n.title, n.body, n.created_at, n.updated_at,
+                    bm25(notes_fts) AS raw_score
+               FROM notes n JOIN notes_fts ON notes_fts.rowid = n.id
+              WHERE ${rankedWhere}
+              ORDER BY raw_score ${dir === "DESC" ? "ASC" : "DESC"}, n.id DESC
+              LIMIT ? OFFSET ?`
+          )
+          .all(...rankedValues, perPage, offset) as NoteRow[];
+      } else {
+        rows = db
+          .prepare(
+            `SELECT id, title, body, created_at, updated_at FROM notes n
+             WHERE ${where}
+             ORDER BY n.${dateSortKey} ${dir}
+             LIMIT ? OFFSET ?`
+          )
+          .all(...values, perPage, offset) as NoteRow[];
+      }
 
       if (!rows.length) {
-        return { notes: [], total, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+        return { notes: [], total, page, perPage, sortKey: appliedSortKey, sortOrder };
       }
 
       // Batch-fetch tags and people for the returned note IDs
@@ -511,6 +560,11 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
 
       // All filter tokens are now resolved into `filterIds` above, so no
       // further client-side filtering is needed here.
+      // Normalised to 0..1 against the best match in the whole result set (not
+      // the page), so it stays stable across pagination and means the same
+      // thing as the Postgres providers' ts_rank-derived score. Raw bm25
+      // values are never surfaced: they are negative, inverted, and not
+      // comparable to ts_rank.
       const notes: NoteListItem[] = rows.map((row) => ({
         id: row.id,
         title: row.title,
@@ -519,9 +573,12 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         tags: tagMap.get(row.id) ?? [],
         people: personMap.get(row.id) ?? [],
         preview: buildPreview(row.body),
+        ...(useRelevance
+          ? { score: bestScore < 0 ? Number(row.raw_score) / bestScore : 0 }
+          : {}),
       }));
 
-      return { notes, total, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+      return { notes, total, page, perPage, sortKey: appliedSortKey, sortOrder };
     },
 
     async get(noteId: number): Promise<Note | null> {
@@ -941,19 +998,13 @@ function buildProjectsProvider(db: Database.Database): ProjectsDataProvider {
       db.prepare(
         "INSERT INTO projects (id, user_id, name, created_at) VALUES (?, ?, ?, ?)"
       ).run(id, userId, name, now);
-      return { id, user_id: userId, name, trigram_search: true, created_at: now };
+      return { id, user_id: userId, name, created_at: now };
     },
 
     async update(projectId, updates): Promise<void> {
       if (updates.name !== undefined) {
         db.prepare("UPDATE projects SET name = ? WHERE id = ?").run(
           updates.name,
-          projectId
-        );
-      }
-      if (updates.trigram_search !== undefined) {
-        db.prepare("UPDATE projects SET trigram_search = ? WHERE id = ?").run(
-          updates.trigram_search ? 1 : 0,
           projectId
         );
       }

@@ -2,7 +2,6 @@ export interface Project {
   id: string;
   user_id: string;
   name: string;
-  trigram_search: boolean;
   created_at: string;
 }
 

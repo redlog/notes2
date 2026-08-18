@@ -26,6 +26,7 @@ import type {
   ListResult,
   Note,
   NoteListItem,
+  SortKey,
   TagCount,
   PersonCount,
   Project,
@@ -166,7 +167,11 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
       let pIdx = 2;
       const conditions: string[] = ["n.project_id = $1"];
 
+      // Remembered so the same bound parameter can be reused by ts_rank_cd()
+      // below — re-pushing the term would parse the tsquery twice.
+      let searchParamIdx: number | null = null;
       if (search) {
+        searchParamIdx = pIdx;
         conditions.push(`n.search_vec @@ websearch_to_tsquery('english', $${pIdx})`);
         sqlVals.push(search);
         pIdx++;
@@ -184,9 +189,18 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         pIdx++;
       }
 
-      // "relevance" is not a real column — fall back to created_at
-      const effectiveSortKey = sortKey === "relevance" ? "created_at" : sortKey;
+      // `relevance` is not a column — it is ts_rank_cd() over the tsquery, so
+      // it only means something when there is a search term to rank against.
+      // Without one, fall back to a date sort rather than emitting
+      // `ORDER BY relevance` against a column that does not exist.
+      const useRelevance = sortKey === "relevance" && searchParamIdx !== null;
+      const dateSortKey = sortKey === "relevance" ? "created_at" : sortKey;
+      const appliedSortKey: SortKey = useRelevance ? "relevance" : dateSortKey;
       const orderDir = sortOrder === "asc" ? "ASC" : "DESC";
+
+      const rankExpr = useRelevance
+        ? `ts_rank_cd(n.search_vec, websearch_to_tsquery('english', $${searchParamIdx}))`
+        : null;
 
       for (const person of [...requiredPeople, ...exclusivePeople]) {
         conditions.push(`EXISTS (SELECT 1 FROM note_people np_f WHERE np_f.note_id = n.id AND np_f.person = $${pIdx})`);
@@ -252,7 +266,7 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
 
         const exactIds = candidates.map((c) => c.id);
         if (exactIds.length === 0) {
-          return { notes: [], total: 0, page, perPage, sortKey: params.sortKey ?? "created_at", sortOrder };
+          return { notes: [], total: 0, page, perPage, sortKey: appliedSortKey, sortOrder };
         }
 
         conditions.push(`n.id = ANY($${pIdx})`);
@@ -275,12 +289,19 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
             FILTER (WHERE np.person IS NOT NULL), '[]'
           ) AS people,
           COUNT(*) OVER() AS total_count
+          ${rankExpr ? `, ${rankExpr} AS raw_score, MAX(${rankExpr}) OVER () AS max_score` : ""}
         FROM notes n
         LEFT JOIN note_tags   nt ON nt.note_id = n.id
         LEFT JOIN note_people np ON np.note_id = n.id
         WHERE ${whereClause}
         GROUP BY n.id
-        ORDER BY n.${effectiveSortKey} ${orderDir}
+        ORDER BY ${
+          rankExpr
+            // Tiebreak on id: equal ts_rank_cd is common on short notes, and
+            // without it LIMIT/OFFSET pagination can repeat or skip rows.
+            ? `raw_score ${orderDir}, n.id DESC`
+            : `n.${dateSortKey} ${orderDir}`
+        }
         LIMIT $${pIdx} OFFSET $${pIdx + 1}
       `;
 
@@ -291,6 +312,12 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
       // requiredTags/exclusive*/excluded* are now resolved into the SQL WHERE
       // via `exactIds` above; requiredPeople is enforced via the EXISTS
       // conditions. No further client-side filtering is needed here.
+      // Normalised 0..1 against the top match of the whole result set (not the
+      // page), so it stays stable across pagination and means the same thing
+      // as the other providers' scores. Raw ts_rank_cd values are not exposed:
+      // they are not comparable to SQLite's bm25 and mean nothing to a user.
+      const maxScore = rows.length > 0 ? Number(rows[0].max_score ?? 0) : 0;
+
       const notes: NoteListItem[] = rows.map((row) => ({
         id: row.id as number,
         title: row.title as string,
@@ -298,6 +325,9 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
         tags: row.tags ?? [],
         people: row.people ?? [],
+        ...(useRelevance
+          ? { score: maxScore > 0 ? Number(row.raw_score) / maxScore : 0 }
+          : {}),
       }));
 
       return {
@@ -305,7 +335,7 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         total: totalCount,
         page,
         perPage,
-        sortKey: params.sortKey ?? "created_at",
+        sortKey: appliedSortKey,
         sortOrder,
       };
     },
@@ -691,7 +721,6 @@ function buildProjectsProvider(db: Pool): ProjectsDataProvider {
       const vals: unknown[] = [];
       let i = 1;
       if (updates.name !== undefined) { sets.push(`name = $${i++}`); vals.push(updates.name); }
-      if (updates.trigram_search !== undefined) { sets.push(`trigram_search = $${i++}`); vals.push(updates.trigram_search); }
       if (!sets.length) return;
       vals.push(projectId);
       await db.query(`UPDATE projects SET ${sets.join(", ")} WHERE id = $${i}`, vals);

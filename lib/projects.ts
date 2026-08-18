@@ -80,7 +80,7 @@ export async function createProject(
 export async function updateProject(
   supabase: SupabaseClient,
   projectId: string,
-  updates: Partial<Pick<Project, "name" | "trigram_search">>
+  updates: Partial<Pick<Project, "name">>
 ): Promise<void> {
   const { error } = await supabase
     .from("projects")
