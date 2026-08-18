@@ -347,12 +347,12 @@ becomes an implicit AND. Unifying this is open work.
   row changes; on SQLite it is an FTS5 virtual table written alongside each note
   save. Both are kept current automatically.
 - Full-text indexing covers the note **title and body**.
-- Tags and people are searchable only where they appear in the body text — a
-  `#tag` or `@person` mention indexes as an ordinary word. Header tags and
-  people set through the UI that are *not* mentioned in the body are not
-  full-text searchable; they are reachable through the `#tag` / `@person`
-  filter tokens instead. Closing that gap needs a trigger-maintained column
-  (a generated column cannot aggregate from another table) and is open work.
+- **Tags and people are deliberately not part of the search index.** They are
+  filter dimensions, not query terms: the `#tag` / `@person` filter tokens match
+  them exactly, which is strictly better than stemmed free-text matching would
+  be. (Where a tag or person is *written into the body*, it indexes incidentally
+  as an ordinary word — `to_tsvector` strips the sigil — but that is a
+  side-effect of indexing body text, not a feature to rely on.)
 - Stopwords are excluded. HTML comments are skipped by the Postgres text parser.
 - URLs and bare numbers **are** indexed, not stripped: `to_tsvector` emits host,
   path, and numeric tokens for them.

@@ -50,7 +50,7 @@ options.
 | Three provider implementations | `lib/providers/{supabase,gcp,sqlite}/index.ts` behind `lib/providers/types.ts:24` | Any search change is a 3× change, or a deliberate per-project capability flag. |
 | `relevance` is a live `SortKey` and now **works** | `lib/types.ts`, `app/page.tsx:49` | Ranked via the `search_notes_ranked()` RPC (Supabase), `ts_rank_cd` (GCP), `bm25()` (SQLite). RRF has a ranked list to fuse against — see §2.1. |
 | `score` is populated, normalised 0..1 | `lib/types.ts`, `components/NoteRow.tsx:144` | Normalised against the best match in the whole result set, so it is stable across pages and comparable between providers. Raw `ts_rank_cd` / `bm25` values are never surfaced. |
-| `search_vec` covers title + body only | `supabase/migrations/001_initial.sql:45` | Still true, and **deliberately deferred** — see §2.1. Body-mentioned `#tag` / `@person` text *is* indexed (the parser strips the sigil), so the gap is only header tags/people that never appear in the body. If chunk context prefixes (§4.2) include tags and people, semantic search will match on metadata lexical search cannot — a smaller asymmetry than first assessed, but still one. |
+| `search_vec` covers title + body only | `supabase/migrations/001_initial.sql:45` | **By design — not a gap.** Tags and people are filter dimensions, not query terms; the `#tag` / `@person` tokens match them exactly. See §2.1. |
 | ~~`projects.trigram_search` is a dead flag~~ | *removed* | The flag, its API field, provider CRUD, the config toggle and the `notes_body_trgm_idx` index have all been dropped; no query ever read any of them. The trigram index moved to `title`, which `searchTitles()` actually matches with `ILIKE`. **No longer a precedent to follow** — it is the cautionary tale, not the template. Use a real capability flag for vector search (§9). |
 | Query semantics diverge per provider | `lib/providers/sqlite/index.ts` `buildFtsQuery` vs `websearch_to_tsquery` | **Still open.** Postgres supports quoted phrases, `or`, and `-negation`; SQLite's `buildFtsQuery` strips punctuation, so those are silently discarded and everything becomes implicit AND. Phase 0 documented the divergence in PRD §5.1 rather than unifying it. The providers still rank different candidate sets for the same query. |
 | `notes_body_trgm_idx` was on the wrong column | *fixed in migration 005* | The only `ILIKE '%…%'` queries in the app are on `title` (`searchTitles`, the note-ref autocomplete), but the trigram index was on `body` — so that query sequential-scanned on every keystroke while the index sat unused. Index moved to `title`. |
@@ -168,18 +168,31 @@ pagination.
   states that the SQLite backend discards phrase/`or`/negation operators. Still
   open work.
 
+**Dropped from scope — tags and people in `search_vec`.** Earlier revisions of
+this document treated this as a gap to close. It is not; it is a design
+decision, and the plan is simpler without it:
+
+- **They are filters, not queries.** The `#tag` / `@person` filter tokens match
+  this metadata *exactly*. Folding it into `search_vec` would give the same
+  metadata a second, worse retrieval path — stemmed, ranked, and fuzzy — for no
+  user-visible gain.
+- **They are poor embedding material.** Tags and surnames are exactly the
+  idiosyncratic, out-of-vocabulary tokens §7 cites as the reason to keep lexical
+  search rather than replace it. They do not carry their weight in a vector.
+- Where a tag or person is written into the body it indexes incidentally anyway
+  (`to_tsvector` strips the sigil, so `#platform` → `platform`). That is a
+  side-effect of indexing body text, not something to rely on or extend.
+
+Two things this removes from the plan: the asymmetry warning in §2's table (if
+lexical search never indexes this metadata, there is nothing for semantic search
+to be asymmetric *with*), and the trigger-maintained column it would have
+required. Worth recording that the originally-proposed mechanism was not
+implementable regardless — Postgres rejects it with `cannot use subquery in
+column generation expression`, since a generated column may only reference its
+own row.
+
 **Deliberately deferred:**
 
-- **Extending `search_vec` to tags and people.** Note that the original plan
-  here — "a generated-column change" — **is not implementable**: Postgres
-  rejects it with `cannot use subquery in column generation expression`, because
-  a generated column may only reference its own row and tags/people live in
-  separate tables. It needs a trigger-maintained column on `notes` (plus an FTS5
-  rebuild on SQLite). The gap is also narrower than assessed: `to_tsvector`
-  strips the sigil, so `#platform` and `@dana` in a body already index as
-  `platform` and `dana`. Only header tags/people that never appear in the body
-  are unsearchable by free text, and those are reachable via the `#tag` /
-  `@person` filter tokens.
 - **PRD §12.2's manual "Reindex".** Both backends maintain their index inside
   the write, so there is no drift to repair and nothing for a reindex to do.
   Revisit when a genuinely stateful search artifact exists — the chunk drain
@@ -265,6 +278,15 @@ Date: 2026-03-14  Tags: #platform #q2  People: @dana @raj
 This is the cheap deterministic version of contextual retrieval — no LLM call,
 no extra latency, no cost. Title, tags, people and mentions are already computed
 on the save path (`lib/notes.ts:24`), so the ingredients are in hand.
+
+**Open at implementation time: should the prefix carry tags and people at all?**
+§2.1 keeps them out of the lexical index because they are filter dimensions and
+weak embedding material. The second half of that argument applies here too — a
+tag or surname is an out-of-vocabulary token that contributes little to a chunk
+vector. The title and date do most of the anchoring work. Measure with and
+without before assuming the metadata line earns its tokens; note that dropping
+it would also make the embedded text align exactly with what lexical search
+sees, which is one less way for the two halves of §7 to disagree.
 
 ### 4.3 Explicitly not doing: note-level embeddings
 
@@ -530,8 +552,8 @@ a coherent state.
    `bm25()` on SQLite; `score` populated and normalised 0..1; `trigram_search`
    removed and the trigram index moved to `title`; the empty-search
    `sk=relevance` crash fixed. Extending `search_vec` to tags and people was
-   deferred — see §2.1 for why, and for why the original approach to it does not
-   work. Migration: `supabase/migrations/005_search_ranking.sql`.
+   dropped from scope as a design decision — see §2.1.
+   Migration: `supabase/migrations/005_search_ranking.sql`.
 1. **Foundation.** `note_chunks` table, chunker, hash diffing, backfill script,
    drain job. No UI change at all. Verifiable by inspecting the table.
 2. **Hybrid search.** Vector + lexical, RRF fusion, wired into the existing
