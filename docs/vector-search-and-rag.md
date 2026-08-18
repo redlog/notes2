@@ -349,9 +349,10 @@ successful save; `/api/embed-drain` is the drain; a Vercel cron entry
 4. Return. Total added latency: one query.
 
 **Out of band (a drain):** select `WHERE embedding IS NULL`, batch up to 128
-chunks per Voyage request, write embeddings back. Trigger via Vercel Cron each
-minute, `pg_cron`, or `waitUntil()` on the save request — whichever fits the
-deployment.
+chunks per Voyage request, write embeddings back.
+
+**All three trigger options listed here ended up being used, not one** — see
+§5.2, because the choice is forced by a hosting limit rather than by taste.
 
 **What this buys:**
 
@@ -360,6 +361,29 @@ deployment.
 - Voyage downtime means search is stale for a few minutes, not that saves fail.
 - **Backfill and incremental use the same code.** Backfill is just "insert all
   chunks with NULL embeddings and let the drain run." Resumability is free.
+
+### 5.2 Three drain triggers, because Vercel Hobby allows one cron per day
+
+This section is a correction to the "whichever fits the deployment" above: the
+free Vercel plan permits cron **once per day**, and a more frequent schedule is
+rejected at deploy time, not silently downgraded. A daily drain on its own would
+mean a note stays unsearchable by meaning for up to 24 hours after you write it,
+which is not a working feature.
+
+So the drain has three entry points, all calling the same `drainOnce()` in
+`lib/drain.ts`:
+
+| Trigger | Where | Role |
+|---|---|---|
+| `after()` on the note save route | any deployment | Primary. Embeds what the save just queued, once the response has been sent. |
+| Vercel cron (`vercel.json`, `0 4 * * *`) | Vercel | Safety net. Catches anything a save missed. |
+| `setInterval` in `instrumentation-node.ts` | local / self-hosted | Vercel cron does not run locally at all; a long-lived process can just use a timer. Defaults to 180s in SQLite mode. |
+
+`after()` is the important one. It runs work after the response is flushed, so
+the save is as fast as it was before and a Voyage outage still cannot fail it —
+the same guarantee §5 was built around, now covering freshness as well. It is
+bounded to a single batch on purpose: it is an opportunistic top-up, not a
+backfill, and the other two triggers exist to finish the job.
 
 **Backfill ended up browser-driven rather than a script.** Notes written before
 the feature was switched on have no chunk rows at all, so the back catalogue has
@@ -706,6 +730,7 @@ of them would have failed loudly.
 | `voyage-context-3` may replace the manual prefix | It would couple chunk vectors to their siblings and destroy the incremental re-embed property (§3). |
 | Backfill as a batch script | Browser-driven paging instead: no separate credentials, no serverless timeout (§5.1). |
 | Per-search "Semantic" toggle | Per-project setting: consent belongs to the project, not the query (§7). |
+| One drain trigger, "whichever fits" | Three. Vercel Hobby caps cron at once a day and *rejects* a faster schedule at deploy time, so freshness had to come from `after()` on the save path instead (§5.2). |
 | Filter ids pre-filter the query | They pre-filter *both* sides, so resolving them must not involve the search term — or semantic-only results silently vanish (§7.2). |
 
 Two further notes for whoever picks this up:
@@ -729,10 +754,11 @@ deterministic and needs no API key. Reserve real embeddings for judging result
 - **Setup:** set `VOYAGE_API_KEY`, apply migration 006, then turn on "Semantic
   search" per project in Settings and press **Build index**. New notes are
   indexed automatically from then on.
-- **Keeping it current:** the Vercel cron entry in `vercel.json` hits
-  `/api/embed-drain` every five minutes, authenticated with `CRON_SECRET`.
-  Without that variable the drain is session-only and runs from the Settings
-  button. Local SQLite mode has no cron — use the button.
+- **Keeping it current:** saving a note drains what it queued via `after()`;
+  the Vercel cron in `vercel.json` runs once a day as a backstop (Hobby plan
+  allows no more), authenticated with `CRON_SECRET`; a local server drains on a
+  timer every `EMBED_DRAIN_INTERVAL_SECONDS` (default 180 in SQLite mode). See
+  §5.2 for why all three exist.
 - **Watching it:** the pending-chunk count on the config page is the health
   signal. Zero means the index is current. A number that never falls means the
   drain is failing; check the server log for `[drain]`.
