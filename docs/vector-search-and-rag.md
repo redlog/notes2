@@ -1,15 +1,17 @@
 # Design: Vector Search and Notes-as-RAG
 
-**Status:** Proposed — not implemented. Written as a plan to pick up later.
-**Date:** 2026-08-11 (revised 2026-08-11 — see §2.1)
+**Status:** Phase 0 shipped. Phases 1–5 proposed — not implemented.
+**Date:** 2026-08-11 (revised 2026-08-11 — see §2.1; revised 2026-08-18 — phase 0 landed)
 **Scope:** Semantic search over notes via Voyage AI embeddings, and exposing the
 resulting retrieval layer to an external chat agent (Claude) over MCP.
 
 **Revision note:** this document originally assumed a working lexical search to
-build on top of. That assumption is false — relevance ranking was never
-implemented (§2.1). The scope therefore now includes repairing the lexical
-baseline, and search should be tackled as one coherent piece of work rather than
-as a semantic layer bolted onto a broken one.
+build on top of. That assumption was false — relevance ranking had never been
+implemented (§2.1). Repairing the lexical baseline was therefore folded in as
+phase 0, and **that phase has now shipped**: all three providers rank, `score`
+is populated, and the `relevance` sort key does what it says. §2.1 below is kept
+as the record of what was wrong and how it was fixed; the RRF step in §7 now has
+a real ranked list to fuse against.
 
 ---
 
@@ -17,14 +19,11 @@ as a semantic layer bolted onto a broken one.
 
 Three goals now, with very different complexity:
 
-0. **Make lexical search actually rank.** Discovered while scoping this work:
-   search today is *boolean matching plus a date sort*. No score is ever
-   computed, the `relevance` sort key is silently coerced to `created_at` in all
-   three providers, and several adjacent PRD promises (partial-word matching,
-   visible scores, tag/people in the index) were never implemented either. Full
-   detail in §2.1. This is not a prerequisite in the bureaucratic sense — it is
-   load-bearing for goal 1, because RRF (§7) needs a *ranked* lexical list to
-   fuse against and there currently isn't one.
+0. ~~**Make lexical search actually rank.**~~ **Done.** Discovered while scoping
+   this work: search was *boolean matching plus a date sort*. No score was ever
+   computed and the `relevance` sort key was silently coerced to `created_at` in
+   all three providers. This was load-bearing for goal 1, because RRF (§7) needs
+   a *ranked* lexical list to fuse against. Full detail and outcome in §2.1.
 1. **Semantic search.** Today's search is lexical only — `tsvector` /
    `websearch_to_tsquery`. It cannot find "the meeting where we decided to delay
    the platform migration" unless those exact words appear. Embedding notes lets
@@ -35,9 +34,8 @@ Three goals now, with very different complexity:
    agent (Claude Desktop / Claude Code / claude.ai) via MCP.
 
 Goal 1 is a self-contained feature. Goal 2 is a thin wrapper over goal 1, and is
-only cheap *because* goal 1 exists. Goal 0 is small in code terms but has to land
-first, or the fusion step in goal 1 has nothing to fuse. Build them in that
-order.
+only cheap *because* goal 1 exists. Goal 0 had to land first, or the fusion step
+in goal 1 would have had nothing to fuse; it has.
 
 ---
 
@@ -50,47 +48,51 @@ options.
 |---|---|---|
 | FTS is a **generated column** on `notes` | `supabase/migrations/001_initial.sql:45` | No index table to maintain. Vector chunks will be the first genuinely stateful search artifact. |
 | Three provider implementations | `lib/providers/{supabase,gcp,sqlite}/index.ts` behind `lib/providers/types.ts:24` | Any search change is a 3× change, or a deliberate per-project capability flag. |
-| `relevance` is a live `SortKey` in the UI… | `lib/types.ts:76`, `app/page.tsx:49` | …but **all three providers silently fall back to `created_at`** (`lib/notes.ts:244`, `lib/providers/gcp/index.ts:188`, `lib/providers/sqlite/index.ts:468`). The scored-result plumbing exists and is entirely dead. **There is no lexical ranking to fuse against** — see §2.1. |
-| `score` is declared but never assigned | `lib/types.ts:54`, `components/NoteRow.tsx:144` | No provider ever populates it, so the score display can never render. Its absence reads as "no score to show" rather than "no score computed" — the main reason this went unnoticed. |
-| `search_vec` covers title + body only | `supabase/migrations/001_initial.sql:45` | Despite the adjacent comment claiming "body + title + tags + people". Tag/person text is not full-text searchable at all. If chunk context prefixes (§4.2) include tags and people, semantic search will match on metadata that lexical search cannot — an avoidable asymmetry. |
-| `projects.trigram_search` is a dead flag | `001_initial.sql:25`, `components/ConfigForm.tsx:268` | Column, API field, provider CRUD, config toggle, and a `notes_body_trgm_idx` index all exist; **no query references any of them.** Treat it as a precedent for capability flags with care — it is precedent for shipping a flag with no implementation behind it. |
-| Query semantics diverge per provider | `lib/providers/sqlite/index.ts:190` vs `websearch_to_tsquery` | Postgres supports quoted phrases, `or`, and `-negation`; the SQLite `buildFtsQuery` strips punctuation, so those are silently discarded and everything becomes implicit AND. Any ranking work should unify this, or the three providers will rank different candidate sets. |
+| `relevance` is a live `SortKey` and now **works** | `lib/types.ts`, `app/page.tsx:49` | Ranked via the `search_notes_ranked()` RPC (Supabase), `ts_rank_cd` (GCP), `bm25()` (SQLite). RRF has a ranked list to fuse against — see §2.1. |
+| `score` is populated, normalised 0..1 | `lib/types.ts`, `components/NoteRow.tsx:144` | Normalised against the best match in the whole result set, so it is stable across pages and comparable between providers. Raw `ts_rank_cd` / `bm25` values are never surfaced. |
+| `search_vec` covers title + body only | `supabase/migrations/001_initial.sql:45` | Still true, and **deliberately deferred** — see §2.1. Body-mentioned `#tag` / `@person` text *is* indexed (the parser strips the sigil), so the gap is only header tags/people that never appear in the body. If chunk context prefixes (§4.2) include tags and people, semantic search will match on metadata lexical search cannot — a smaller asymmetry than first assessed, but still one. |
+| ~~`projects.trigram_search` is a dead flag~~ | *removed* | The flag, its API field, provider CRUD, the config toggle and the `notes_body_trgm_idx` index have all been dropped; no query ever read any of them. The trigram index moved to `title`, which `searchTitles()` actually matches with `ILIKE`. **No longer a precedent to follow** — it is the cautionary tale, not the template. Use a real capability flag for vector search (§9). |
+| Query semantics diverge per provider | `lib/providers/sqlite/index.ts` `buildFtsQuery` vs `websearch_to_tsquery` | **Still open.** Postgres supports quoted phrases, `or`, and `-negation`; SQLite's `buildFtsQuery` strips punctuation, so those are silently discarded and everything becomes implicit AND. Phase 0 documented the divergence in PRD §5.1 rather than unifying it. The providers still rank different candidate sets for the same query. |
+| `notes_body_trgm_idx` was on the wrong column | *fixed in migration 005* | The only `ILIKE '%…%'` queries in the app are on `title` (`searchTitles`, the note-ref autocomplete), but the trigram index was on `body` — so that query sequential-scanned on every keystroke while the index sat unused. Index moved to `title`. |
 | Autosave defaults on, **30s interval** | PRD §4.5 | The single hardest constraint on "re-embed on save". See §5. |
-| `saveNote()` already extracts title, mentions, inlinks | `lib/notes.ts:317`, `lib/notes.ts:21` | The metadata needed for contextual chunk prefixes is already computed on the save path. |
-| Existing per-project search capability flag | `projects.trigram_search` | Precedent for making vector search opt-in per project / per provider. |
+| `saveNote()` already extracts title, mentions, inlinks | `lib/notes.ts:386`, `lib/notes.ts:24` | The metadata needed for contextual chunk prefixes is already computed on the save path. |
+| No per-project search capability flag exists any more | *`projects.trigram_search` removed* | Vector search will need one; there is no longer a pattern in the codebase to copy, which is a feature — see §9. |
 | Existing API surface | `/api/notes/[id]`, `/api/title-search`, `/api/tagline/[tag]`, `/api/export-json` | An MCP server is mostly a thin wrapper over routes that already exist. |
 
-### 2.1 Pre-existing lexical search debt
+### 2.1 Pre-existing lexical search debt — resolved
 
-Scoping this design surfaced that **relevance ranking has never worked**. This
-section records what is actually broken, so the eventual search project addresses
-lexical and semantic retrieval together instead of layering embeddings over a
-foundation that doesn't rank.
+Scoping this design surfaced that **relevance ranking had never worked**. This
+section records what was broken and what shipped to fix it (migration
+`005_search_ranking.sql` plus the three provider `list()` implementations).
 
-**What search does today.** Every provider filters notes to matches/non-matches
-and then orders by a date column. Nothing computes a score anywhere in the stack.
+**What search did before.** Every provider filtered notes to matches/non-matches
+and then ordered by a date column. Nothing computed a score anywhere in the stack.
 
-| Provider | Match | Order |
-|---|---|---|
-| Supabase | `.textSearch("search_vec", …, {type:"websearch"})` (`lib/notes.ts:229`) | `created_at` / `updated_at` |
-| GCP | `search_vec @@ websearch_to_tsquery(…)` (`lib/providers/gcp/index.ts:170`) | same |
-| SQLite | `id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)` (`lib/providers/sqlite/index.ts:450`) | same |
+| Provider | Match | Order (before) | Order (now) |
+|---|---|---|---|
+| Supabase | `.textSearch("search_vec", …, {type:"websearch"})` | `created_at` / `updated_at` | `ts_rank_cd` via `search_notes_ranked()` RPC |
+| GCP | `search_vec @@ websearch_to_tsquery(…)` | same | `ts_rank_cd` in the `ORDER BY` |
+| SQLite | `notes_fts MATCH ?` | same | `bm25(notes_fts)` |
 
-Matching itself is fine and correctly indexed (GIN on `search_vec`, FTS5 virtual
-table). It is only the ranking half that is missing.
+Matching itself was always fine and correctly indexed (GIN on `search_vec`, FTS5
+virtual table). It was only the ranking half that was missing.
 
-**Why it is silent rather than an error.** Three things conspire:
+**Why it was silent rather than an error.** Three things conspired:
 
-1. The UI keeps showing the sort you picked — `ListResult` echoes
-   `params.sortKey` back unchanged (`lib/notes.ts:269`) and `app/page.tsx:129`
-   highlights the button from the URL, not from what the query did.
-2. Scores can never render (see the `score` row above), so their absence looks
-   normal.
+1. The UI kept showing the sort you picked — `ListResult` echoed
+   `params.sortKey` back unchanged and `app/page.tsx:129` highlights the button
+   from the URL, not from what the query did.
+2. Scores could never render (see the `score` row above), so their absence
+   looked normal.
 3. Date-descending is *plausible* for personal notes. Wrong ordering reads as
    mediocre ordering, not as a bug.
 
 Worse, `app/page.tsx:49` defaults to `relevance` whenever a search is active, so
-the broken path is the **default** post-search view.
+the broken path was the **default** post-search view.
+
+All three are now closed: `ListResult.sortKey` reports the sort actually
+applied rather than echoing the request, and `score` is populated on the
+relevance path so `NoteRow` renders it.
 
 **Why it happened.** Not a decision anyone made. Everything above traces to a
 single commit — `40fe6b3` "First commit, v2", the whole app scaffolded in one
@@ -105,54 +107,87 @@ The storage swap is what broke it. Postgres FTS gives a boolean from `@@`; the
 score is a separate `ts_rank()` you must select and order by. And through the
 PostgREST client, `.textSearch()` is one line while `ORDER BY ts_rank(...)` is
 not expressible at all — it needs an RPC or a view, i.e. a migration. The cheap
-half shipped, the expensive half became a shim, and the comment at
-`lib/providers/gcp/index.ts:187` — *"relevance is not a real column — fall back
-to created_at"* — records an ORM limitation, not a product decision. The
+half shipped, the expensive half became a shim, and the comment that sat on it
+in the GCP provider — *"relevance is not a real column — fall back to
+created_at"* (removed in the phase 0 commit) — records an ORM limitation, not a
+product decision. The
 provider abstraction (`0664e4e`), GCP (`0bef887`) and SQLite (`936db29`) then
 each ported `list()` from the Supabase version, shim included, turning one line
 into three and making it look like a convention.
 
-**What fixing it involves, per provider:**
+**What fixing it involved, per provider:**
 
-- **Postgres (Supabase):** blocked on PostgREST. Needs an RPC or view exposing
-  `ts_rank`/`ts_rank_cd` — which is the same plumbing hybrid search needs for the
-  similarity query (§6 "RLS note"). Do these together; it is one migration, not
-  two.
-- **Postgres (GCP):** raw SQL already, so `ts_rank` drops straight into the
-  `ORDER BY`.
-- **SQLite:** ranking is already available — `bm25(notes_fts)` is one call away.
-  The current `id IN (SELECT rowid …)` subquery structure discards it, so the
-  query needs restructuring to select from `notes_fts` and join.
+- **Postgres (Supabase):** blocked on PostgREST, as predicted. Ranking lives in
+  a `search_notes_ranked()` RPC (migration 005) returning rows plus `score` and
+  a window-function `total`. It runs `SECURITY INVOKER`, so RLS still applies —
+  verified by calling it as the `authenticated` role with another user's
+  `project_id` and getting zero rows. This is the same plumbing the similarity
+  query will need (§6 "RLS note"); extend this function rather than adding a
+  second one.
+- **Postgres (GCP):** raw SQL already, so `ts_rank_cd` dropped straight into the
+  `SELECT` and `ORDER BY`.
+- **SQLite:** restructured to join `notes_fts` so `bm25()` is reachable. Two
+  sharp edges worth knowing before touching this again, both found by running
+  the queries rather than reading docs:
+  - **FTS5 rejects table aliases.** `notes_fts AS f` then `f MATCH ?` or
+    `bm25(f)` fails with `no such column: f`. The real table name is required,
+    so the join cannot be aliased.
+  - **FTS5 refuses `bm25()` inside an aggregate.** `MIN(bm25(notes_fts))` fails
+    with `unable to use function bm25 in the requested context`, and wrapping it
+    in a subquery does not help. The normalisation anchor is read with
+    `ORDER BY … ASC LIMIT 1` instead — which is cheaper anyway.
 
-**Also in scope for the same pass:**
+**Score normalisation.** `ts_rank_cd` returns small positive floats; `bm25()`
+returns *negative* numbers where smaller is better. Surfacing either raw would
+be meaningless to a user and incomparable across providers — the same
+"plausible but wrong" failure this whole section is about. So every provider
+normalises to **0..1 against the best match in the whole result set**: the top
+hit reads 1.000, everything else is a fraction of it. Anchoring on the whole
+match set rather than the current page keeps the number stable under
+pagination.
 
-- Populate `NoteListItem.score` so `components/NoteRow.tsx:144` can render, and
-  decide whether raw `ts_rank` / `bm25` values are meaningful to show a user at
-  all. (`bm25()` returns *negative* numbers, smaller is better — do not surface
-  it raw, and do not compare it to `ts_rank` across providers.)
-- Extend `search_vec` to include tag and person text, matching both its own
-  comment and PRD §12.1. This is a generated-column change, so it is a migration
-  plus a rebuild of the column.
-- Resolve `projects.trigram_search`: either implement the partial-word matching
-  PRD §5.1 promises (the `notes_body_trgm_idx` index is already there) or remove
-  the flag and the toggle. English stemming covers some cases incidentally
-  ("test" → "testing") but not others ("test" ↛ "untested").
-- Unify query syntax across providers, or document the divergence deliberately.
-- **Latent crash.** The Supabase and SQLite guards are
-  `search && sortKey === "relevance"`; only GCP guards unconditionally. With
-  `sk=relevance` and an *empty* search, `ORDER BY relevance` hits a non-existent
-  column. `SearchBar` drops `sk` on submit so the normal flow avoids it, but a
-  hand-edited URL, a bookmark, back-navigation, or
-  `/api/export?sk=relevance` with no search term (`app/api/export/route.ts:15`)
-  reaches it. Read from the code, not reproduced at runtime.
-- PRD §12.2 specifies a manual "Reindex" action that does not exist anywhere.
-  Decide whether it is still wanted — the chunk drain (§5.1) gives the vector
-  side a natural home for one.
+**Also handled in the same pass:**
 
-**Consequence for this design:** §7's RRF step assumes two ranked lists. Today
-the lexical side produces an unordered candidate set, so there is no
-`rank_in_list` to fuse. Phase 2 of §10 cannot be built as written until the
-lexical ranking exists.
+- `NoteListItem.score` is populated, so `components/NoteRow.tsx:144` renders.
+- **Latent crash, fixed.** The Supabase and SQLite guards were
+  `search && sortKey === "relevance"`; only GCP guarded unconditionally. With
+  `sk=relevance` and an *empty* search, `ORDER BY relevance` hit a non-existent
+  column — confirmed against Postgres: `ERROR: column "relevance" does not
+  exist`. `SearchBar` drops `sk` on submit so the normal flow avoided it, but a
+  hand-edited URL, a bookmark, back-navigation, or `/api/export?sk=relevance`
+  with no search term (`app/api/export/route.ts:15`) reached it. All three
+  guards are now unconditional.
+- `projects.trigram_search` **removed** along with the `notes_body_trgm_idx`
+  index; the trigram index moved to `title`. Rationale: implementing real
+  partial-word matching is a 3× provider change with no `pg_trgm` equivalent on
+  SQLite, it would mix trigram similarity into a ranking path whose whole point
+  is that incomparable scores must not be blended, and hybrid semantic search
+  (§7) serves "I can't recall the exact word" far better than substring matching
+  does. PRD §5.1 and §14 updated to say partial-word matching is not supported.
+- Query-syntax divergence **documented rather than unified** — PRD §5.1 now
+  states that the SQLite backend discards phrase/`or`/negation operators. Still
+  open work.
+
+**Deliberately deferred:**
+
+- **Extending `search_vec` to tags and people.** Note that the original plan
+  here — "a generated-column change" — **is not implementable**: Postgres
+  rejects it with `cannot use subquery in column generation expression`, because
+  a generated column may only reference its own row and tags/people live in
+  separate tables. It needs a trigger-maintained column on `notes` (plus an FTS5
+  rebuild on SQLite). The gap is also narrower than assessed: `to_tsvector`
+  strips the sigil, so `#platform` and `@dana` in a body already index as
+  `platform` and `dana`. Only header tags/people that never appear in the body
+  are unsearchable by free text, and those are reachable via the `#tag` /
+  `@person` filter tokens.
+- **PRD §12.2's manual "Reindex".** Both backends maintain their index inside
+  the write, so there is no drift to repair and nothing for a reindex to do.
+  Revisit when a genuinely stateful search artifact exists — the chunk drain
+  (§5.1) is exactly that, and gives it a natural home.
+
+**Consequence for this design:** §7's RRF step assumes two ranked lists. It now
+has them — the lexical side produces a real `rank_in_list`, so phase 2 of §10 is
+unblocked.
 
 ---
 
@@ -229,7 +264,7 @@ Date: 2026-03-14  Tags: #platform #q2  People: @dana @raj
 
 This is the cheap deterministic version of contextual retrieval — no LLM call,
 no extra latency, no cost. Title, tags, people and mentions are already computed
-on the save path (`lib/notes.ts:21`), so the ingredients are in hand.
+on the save path (`lib/notes.ts:24`), so the ingredients are in hand.
 
 ### 4.3 Explicitly not doing: note-level embeddings
 
@@ -346,12 +381,14 @@ score(note) = Σ over result lists  1 / (60 + rank_in_list)
 RRF needs no score normalization, which matters because `ts_rank` and cosine
 similarity are not remotely comparable quantities. Roughly 15 lines.
 
-**RRF consumes ranks, and the lexical side does not currently produce one**
-(§2.1). `rank_in_list` for the lexical results requires `ts_rank` / `bm25`
-ordering that has never been implemented — today that list comes back ordered by
-`created_at`, which would make the fusion a date-vs-similarity blend rather than
-a relevance one. Fix the lexical ranking first; then this is the step that makes
-the `relevance` sort key real for the first time.
+**RRF consumes ranks, and the lexical side now produces one** (§2.1). Before
+phase 0 the lexical list came back ordered by `created_at`, which would have
+made the fusion a date-vs-similarity blend rather than a relevance one. That is
+resolved: `ts_rank_cd` / `bm25` ordering gives a real `rank_in_list`.
+
+Note that RRF consumes **ranks, not scores**, so it is indifferent to the 0..1
+normalisation phase 0 introduced for display. Feed it the ordinal position in
+each list and ignore the score column entirely.
 
 Aggregation: a note's vector-side rank comes from its best-scoring chunk
 (`max()`), then RRF fuses the note-level lexical and semantic rankings.
@@ -439,9 +476,11 @@ and it is the strongest argument for the MCP approach.
 
 - **Provider fan-out.** `sqlite` mode has no pgvector. Options: `sqlite-vec`, or
   brute-force cosine in JS (genuinely fine under ~10k chunks). Either way, gate
-  it as a per-project capability flag following the `projects.trigram_search`
-  precedent, so local mode does not break. `gcp` mode needs pgvector enabled on
-  Cloud SQL.
+  it as a per-project capability flag so local mode does not break. Note the
+  `projects.trigram_search` precedent has been **removed**, not followed: it was
+  a flag with no implementation behind it. If vector search gets a flag, wire it
+  to a query on the same commit that adds the column.  `gcp` mode needs pgvector
+  enabled on Cloud SQL.
 - **Privacy posture change.** v1 was local-first and `sqlite` mode still is.
   Sending note bodies to Voyage — and then note contents into Claude via MCP —
   is a meaningful shift. For the Supabase deployment it is a small delta since
@@ -457,16 +496,23 @@ and it is the strongest argument for the MCP approach.
 - **Silent degradation is this codebase's established failure mode.** Relevance
   ranking (§2.1) and `trigram_search` both shipped as complete-looking UI
   surfaces over unimplemented backends, and neither surfaced an error for six
-  months. Semantic search has the same shape of risk, and worse: a wrong
-  `input_type` (§3), a model change without a re-embed, or a stalled drain all
-  return *plausible* results rather than failing. Build in something observable —
-  a count of `WHERE embedding IS NULL` on the settings page, and the `model`/`dim`
-  columns actually checked at query time rather than merely stored.
-- **The PRD is not a reliable description of the system.** §5.1, §12.1, §12.2 and
-  §12.3 describe search behaviour that does not exist. It was written from v1 and
-  landed in the same commit as the code, so it never acted as a check on the
-  implementation. Verify against the code before treating any PRD search claim as
-  current, and update it as part of the search work.
+  months. Both are now resolved, but semantic search has the same shape of risk,
+  and worse: a wrong `input_type` (§3), a model change without a re-embed, or a
+  stalled drain all return *plausible* results rather than failing. Build in
+  something observable — a count of `WHERE embedding IS NULL` on the settings
+  page, and the `model`/`dim` columns actually checked at query time rather than
+  merely stored.
+  The phase 0 lesson worth carrying forward: **every claim in this document that
+  was checked against a running database turned out to have an exception** —
+  generated columns cannot aggregate cross-table, FTS5 rejects aliases and
+  refuses `bm25()` in an aggregate. None of those would have failed loudly.
+  Run the query before believing the design.
+- **The PRD was not a reliable description of the system.** §5.1, §12.1, §12.2
+  and §12.3 described search behaviour that did not exist; it was written from v1
+  and landed in the same commit as the code, so it never acted as a check on the
+  implementation. Those four sections have now been rewritten to match the code.
+  The habit still applies: verify against the code before treating any PRD claim
+  as current, and update it as part of the work.
 - **Open: does `voyage-context-3` obsolete the manual context prefix (§4.2)?**
   Evaluate at implementation time.
 - **Open: chunk-level or note-level results in the UI?** Showing matching chunks
@@ -479,28 +525,32 @@ and it is the strongest argument for the MCP approach.
 Each phase is independently useful; stopping after any of them leaves the app in
 a coherent state.
 
-0. **Lexical ranking (§2.1).** `ts_rank` via RPC/view on Supabase, `ts_rank` in
-   the GCP SQL, `bm25()` on SQLite; populate `score`; extend `search_vec` to tags
-   and people; resolve or remove `trigram_search`; fix the empty-search
-   `sk=relevance` crash. **Ships user-visible value on its own** — the relevance
-   sort starts working — and is the only phase that requires no new
-   infrastructure, no external API, and no new dependency.
+0. ~~**Lexical ranking (§2.1).**~~ **Shipped.** `ts_rank_cd` via the
+   `search_notes_ranked()` RPC on Supabase, `ts_rank_cd` in the GCP SQL,
+   `bm25()` on SQLite; `score` populated and normalised 0..1; `trigram_search`
+   removed and the trigram index moved to `title`; the empty-search
+   `sk=relevance` crash fixed. Extending `search_vec` to tags and people was
+   deferred — see §2.1 for why, and for why the original approach to it does not
+   work. Migration: `supabase/migrations/005_search_ranking.sql`.
 1. **Foundation.** `note_chunks` table, chunker, hash diffing, backfill script,
    drain job. No UI change at all. Verifiable by inspecting the table.
 2. **Hybrid search.** Vector + lexical, RRF fusion, wired into the existing
    `relevance` sort key. Plus related-notes in the read sidebar (§7.2) for
-   near-zero marginal cost. **Depends on phase 0** — see §7.
-3. **Save-flow hook.** Dirty-marking in `saveNote()` (`lib/notes.ts:317`) and the
+   near-zero marginal cost. **Phase 0 dependency satisfied** — see §7.
+3. **Save-flow hook.** Dirty-marking in `saveNote()` (`lib/notes.ts:386`) and the
    two provider equivalents, so the index stays live without a manual reindex.
 4. **Local stdio MCP server** over the existing API routes plus the new search.
 5. **(Probably never.)** Query expansion — see §7.1.
 
-Phase 0 is cheap, unblocks phase 2, and is worth doing even if the rest of this
-document is never built. Phases 0–2 are the bulk of the value. Phase 4 is small
-and delivers the Q&A goal outright. Phase 5 is likely unnecessary once hybrid
-search is in.
+Phase 0 was cheap, unblocks phase 2, and was worth doing even if the rest of this
+document is never built. Phases 1–2 are the bulk of the remaining value. Phase 4
+is small and delivers the Q&A goal outright. Phase 5 is likely unnecessary once
+hybrid search is in.
 
-**Sequencing note:** phases 0 and 1 both add a Postgres RPC/view to work around
-PostgREST's inability to order by a computed expression. If both are in scope,
-write one migration that exposes lexical rank and similarity together rather than
-two that overlap.
+**Sequencing note:** phase 0 shipped before phase 1, so the "one migration"
+consolidation it suggested did not happen — `005_search_ranking.sql` exposes
+lexical rank only. When the similarity query arrives, **extend
+`search_notes_ranked()` rather than adding a parallel function**: it already
+carries the project filter, the `filter_ids` pre-filter, the date bounds, the
+tag/person aggregation and the window-function total, and duplicating that in a
+second RPC is how the three-way `list()` divergence happened in the first place.

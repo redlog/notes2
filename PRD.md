@@ -131,14 +131,20 @@ The main list view always has a search bar and filter bar visible at the top.
 
 ### 5.1 Full-Text Search
 - The user types a query into the search box and presses Enter (or submits the form).
-- The search engine matches the query against the full text of all note bodies in the active project.
-- **Partial-word matching** is supported: searching "test" will find "testing" and "untested".
+- The search engine matches the query against the title and body of all notes in the active project.
+- **Whole-word matching only.** English stemming means "test" finds "testing" and "tested", but *not* "untested" — a prefix or infix of a word is not a match. There is no partial-word (substring) search.
 - **Multi-word queries**: all terms must match (implicit AND).
 - **Stopwords** (common words: the, a, is, it, etc.) are excluded from indexing and ignored in queries.
-- Results are returned ranked by relevance (search score).
-- When a search is active, the default sort order changes to "Relevance" (highest score first). The user can override this.
+- Results are returned ranked by relevance (search score) — see §12.3.
+- When a search is active, the default sort order changes to "Relevance" (best match first). The user can override this.
 - The search is case-insensitive.
 - Clearing the search box and resubmitting returns to the full note list.
+
+**Query syntax differs by backend.** The Postgres backends (Supabase, GCP) use
+`websearch_to_tsquery`, which additionally supports `"quoted phrases"`, `or`, and
+`-negation`. The SQLite backend strips punctuation from the query before handing
+it to FTS5, so those operators are silently discarded there and every query
+becomes an implicit AND. Unifying this is open work.
 
 ### 5.2 Tag and People Filtering
 - Filters are applied via a filter bar or by clicking tag/people links throughout the UI.
@@ -330,27 +336,45 @@ The main list view always has a search bar and filter bar visible at the top.
 
 ### 11.3 Per-Project Settings
 - Project name (editable)
-- Trigram (partial-word) search enabled/disabled (default: enabled)
 
 ---
 
 ## 12. Search Index
 
 ### 12.1 How Indexing Works
-- The search index is built automatically when notes are created, edited, or deleted.
-- Full-text indexing covers the note body, title, tags, and people.
-- Stopwords are excluded.
-- URLs, HTML comments, and bare numbers are stripped before indexing.
-- When trigram search is enabled, words are indexed as character-level trigrams, enabling substring matching.
+- There is no separate index to build or maintain. On Postgres the index is a
+  `tsvector` generated column on `notes`, recomputed by the database whenever a
+  row changes; on SQLite it is an FTS5 virtual table written alongside each note
+  save. Both are kept current automatically.
+- Full-text indexing covers the note **title and body**.
+- Tags and people are searchable only where they appear in the body text — a
+  `#tag` or `@person` mention indexes as an ordinary word. Header tags and
+  people set through the UI that are *not* mentioned in the body are not
+  full-text searchable; they are reachable through the `#tag` / `@person`
+  filter tokens instead. Closing that gap needs a trigger-maintained column
+  (a generated column cannot aggregate from another table) and is open work.
+- Stopwords are excluded. HTML comments are skipped by the Postgres text parser.
+- URLs and bare numbers **are** indexed, not stripped: `to_tsvector` emits host,
+  path, and numeric tokens for them.
 
 ### 12.2 Manual Reindex
-- A "Reindex" action (available from the header or settings page) rebuilds the full search index for the active project from scratch.
-- This is useful if the index becomes inconsistent.
+- **Not implemented, and not currently needed.** Both backends maintain their
+  index as part of the write itself, so there is no drift for a reindex to
+  repair. If a stateful search artifact is added later (embeddings, for
+  example), this section should be revisited.
 
 ### 12.3 Search Result Scoring
-- Results are scored by TF-IDF (term frequency × inverse document frequency), normalized by document length.
-- Higher scores indicate more relevant notes.
-- Scores are displayed in the list when a search is active and sorting by relevance.
+- Higher scores indicate more relevant notes. Scores are displayed in the list
+  when a search is active and sorting by relevance.
+- The underlying ranking function differs by backend: Postgres uses
+  `ts_rank_cd` (cover density — term frequency weighted by how closely the
+  query terms sit together), SQLite uses `bm25()`. Neither is TF-IDF exactly,
+  and their raw values are not comparable to each other.
+- So the raw value is never shown. Every backend normalises to **0..1 against
+  the best match in the whole result set**, meaning the top hit always reads
+  1.000 and everything else is a fraction of it. Normalising against the whole
+  match set rather than the current page keeps the number stable across
+  pagination.
 
 ---
 
@@ -380,6 +404,7 @@ This is a key distinction maintained from v1.
 | File-based note locking (`.lock` files) | **Removed.** Replaced by version-based optimistic concurrency. |
 | `filelock`-based index locking | **Removed.** Database handles concurrent access natively. |
 | Index stored as `index.json` | **Removed.** Database-backed search index. |
+| Trigram / partial-word (substring) search | **Removed.** Postgres FTS and FTS5 match whole words (with stemming). The `trigram_search` project setting that claimed to control this never had an implementation behind it and has been dropped. |
 | Per-note Unix timestamp filenames as IDs | **Replaced.** Server-assigned IDs (database primary keys). |
 | Multi-project stored as separate directories | **Replaced.** Projects are database records. |
 | `/exit_cleanly` shutdown endpoint | **Removed.** Cloud-hosted server has no shutdown endpoint. |
