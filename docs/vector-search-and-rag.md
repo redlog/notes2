@@ -1,7 +1,7 @@
 # Design: Vector Search and Notes-as-RAG
 
-**Status:** Phase 0 shipped. Phases 1–5 proposed — not implemented.
-**Date:** 2026-08-11 (revised 2026-08-11 — see §2.1; revised 2026-08-18 — phase 0 landed)
+**Status:** Phases 0–3 shipped. Phase 4 (MCP) proposed; phase 5 unlikely.
+**Date:** 2026-08-11 (revised 2026-08-11 — see §2.1; revised 2026-08-18 — phases 0–3 landed)
 **Scope:** Semantic search over notes via Voyage AI embeddings, and exposing the
 resulting retrieval layer to an external chat agent (Claude) over MCP.
 
@@ -10,8 +10,13 @@ build on top of. That assumption was false — relevance ranking had never been
 implemented (§2.1). Repairing the lexical baseline was therefore folded in as
 phase 0, and **that phase has now shipped**: all three providers rank, `score`
 is populated, and the `relevance` sort key does what it says. §2.1 below is kept
-as the record of what was wrong and how it was fixed; the RRF step in §7 now has
-a real ranked list to fuse against.
+as the record of what was wrong and how it was fixed.
+
+**Phases 1–3 have also shipped** — notes are chunked and embedded, search fuses
+the lexical and semantic rankings with RRF, related notes are live, and the save
+path keeps the index current. What remains is phase 4 (MCP). Sections below are
+annotated where the implementation departed from the plan; §11 records what was
+learned building it.
 
 ---
 
@@ -24,18 +29,17 @@ Three goals now, with very different complexity:
    computed and the `relevance` sort key was silently coerced to `created_at` in
    all three providers. This was load-bearing for goal 1, because RRF (§7) needs
    a *ranked* lexical list to fuse against. Full detail and outcome in §2.1.
-1. **Semantic search.** Today's search is lexical only — `tsvector` /
-   `websearch_to_tsquery`. It cannot find "the meeting where we decided to delay
-   the platform migration" unless those exact words appear. Embedding notes lets
-   the search box answer conceptual queries.
+1. ~~**Semantic search.**~~ **Done.** Search was lexical only — `tsvector` /
+   `websearch_to_tsquery` — and could not find "the meeting where we decided to
+   delay the platform migration" unless those exact words appeared. Notes are
+   now chunked and embedded, and the relevance sort fuses both rankings (§7).
 2. **Q&A over notes.** Ask "what's the current status of project X?" and get an
    answer synthesized from the notes. Explicitly **not** by building a chat UI in
    this app — instead by exposing the notes as a retrieval tool to an external
    agent (Claude Desktop / Claude Code / claude.ai) via MCP.
 
-Goal 1 is a self-contained feature. Goal 2 is a thin wrapper over goal 1, and is
-only cheap *because* goal 1 exists. Goal 0 had to land first, or the fusion step
-in goal 1 would have had nothing to fuse; it has.
+Goal 1 is a self-contained feature and is now built. Goal 2 is a thin wrapper
+over it, and is only cheap *because* goal 1 exists — that is the remaining work.
 
 ---
 
@@ -46,7 +50,7 @@ options.
 
 | Fact | Location | Consequence |
 |---|---|---|
-| FTS is a **generated column** on `notes` | `supabase/migrations/001_initial.sql:45` | No index table to maintain. Vector chunks will be the first genuinely stateful search artifact. |
+| FTS is a **generated column** on `notes` | `supabase/migrations/001_initial.sql:45` | No index table to maintain. `note_chunks` (migration 006) is now the first genuinely stateful search artifact — and the reason PRD §12.2's reindex finally has something to repair. |
 | Three provider implementations | `lib/providers/{supabase,gcp,sqlite}/index.ts` behind `lib/providers/types.ts:24` | Any search change is a 3× change, or a deliberate per-project capability flag. |
 | `relevance` is a live `SortKey` and now **works** | `lib/types.ts`, `app/page.tsx:49` | Ranked via the `search_notes_ranked()` RPC (Supabase), `ts_rank_cd` (GCP), `bm25()` (SQLite). RRF has a ranked list to fuse against — see §2.1. |
 | `score` is populated, normalised 0..1 | `lib/types.ts`, `components/NoteRow.tsx:144` | Normalised against the best match in the whole result set, so it is stable across pages and comparable between providers. Raw `ts_rank_cd` / `bm25` values are never surfaced. |
@@ -54,9 +58,9 @@ options.
 | ~~`projects.trigram_search` is a dead flag~~ | *removed* | The flag, its API field, provider CRUD, the config toggle and the `notes_body_trgm_idx` index have all been dropped; no query ever read any of them. The trigram index moved to `title`, which `searchTitles()` actually matches with `ILIKE`. **No longer a precedent to follow** — it is the cautionary tale, not the template. Use a real capability flag for vector search (§9). |
 | Query semantics diverge per provider | `lib/providers/sqlite/index.ts` `buildFtsQuery` vs `websearch_to_tsquery` | **Still open.** Postgres supports quoted phrases, `or`, and `-negation`; SQLite's `buildFtsQuery` strips punctuation, so those are silently discarded and everything becomes implicit AND. Phase 0 documented the divergence in PRD §5.1 rather than unifying it. The providers still rank different candidate sets for the same query. |
 | `notes_body_trgm_idx` was on the wrong column | *fixed in migration 005* | The only `ILIKE '%…%'` queries in the app are on `title` (`searchTitles`, the note-ref autocomplete), but the trigram index was on `body` — so that query sequential-scanned on every keystroke while the index sat unused. Index moved to `title`. |
-| Autosave defaults on, **30s interval** | PRD §4.5 | The single hardest constraint on "re-embed on save". See §5. |
+| Autosave defaults on, **30s interval** | PRD §4.5 | The single hardest constraint on "re-embed on save", and the reason for the hash-diff queue in §5. Handled: an unchanged bullet hashes identically, so an autosave storm produces no embedding work at all. |
 | `saveNote()` already extracts title, mentions, inlinks | `lib/notes.ts:386`, `lib/notes.ts:24` | The metadata needed for contextual chunk prefixes is already computed on the save path. |
-| No per-project search capability flag exists any more | *`projects.trigram_search` removed* | Vector search will need one; there is no longer a pattern in the codebase to copy, which is a feature — see §9. |
+| `projects.vector_search` is a real capability flag | migration 006, `components/ConfigForm.tsx` | Gates embedding per project, defaults off, and states plainly that note text goes to Voyage. Wired to actual queries in the same commit that added the column — the opposite of how `trigram_search` was done. |
 | Existing API surface | `/api/notes/[id]`, `/api/title-search`, `/api/tagline/[tag]`, `/api/export-json` | An MCP server is mostly a thin wrapper over routes that already exist. |
 
 ### 2.1 Pre-existing lexical search debt — resolved
@@ -231,11 +235,23 @@ one, paid `voyage-3.5-lite` is ~$0.02 / 1M tokens.
 2. **Store `model` and `dim` on every row.** A model change is a full re-embed.
    Mixing two models in one vector column produces silently wrong neighbours.
 
-**Worth re-evaluating at implementation time:** Voyage shipped
-`voyage-context-3`, a contextualized-chunk embedding model that embeds each
-chunk with its full parent document as context. That targets exactly the problem
-§4 solves manually. Check current pricing/availability before committing — but
-note that the manual context prefix below is free and gets most of the benefit.
+**Resolved at implementation time — `voyage-context-*` was evaluated and not
+used.** The contextualized-chunk models (`voyage-context-3`, and now
+`voyage-context-4`) embed each chunk with its parent document as context, which
+does target the problem §4.2 solves by hand. They were rejected on architecture,
+not quality: their request shape is `inputs: string[][]` — chunks **grouped by
+document** — so a chunk's vector depends on its siblings. Editing one bullet
+would then invalidate every chunk in the note, which destroys the property the
+whole save-flow design in §5 is built on ("fix a typo, pay for one embed, not
+thirty"). The batching model also conflicts with a drain that pulls arbitrary
+pending chunks across notes. The manual context prefix stays: it is free, it
+keeps chunks independent, and it gets most of the benefit.
+
+**API shape was taken from the official `voyageai` TypeScript SDK's types, not
+from the docs site** (which the sandbox could not reach). Endpoint is
+`POST https://api.voyageai.com/v1/embeddings`; `input` is capped at 128 entries.
+`lib/embeddings.ts` is a plain fetch wrapper rather than the SDK — one endpoint,
+six fields, no reason for the dependency.
 
 ---
 
@@ -279,14 +295,20 @@ This is the cheap deterministic version of contextual retrieval — no LLM call,
 no extra latency, no cost. Title, tags, people and mentions are already computed
 on the save path (`lib/notes.ts:24`), so the ingredients are in hand.
 
-**Open at implementation time: should the prefix carry tags and people at all?**
-§2.1 keeps them out of the lexical index because they are filter dimensions and
-weak embedding material. The second half of that argument applies here too — a
-tag or surname is an out-of-vocabulary token that contributes little to a chunk
-vector. The title and date do most of the anchoring work. Measure with and
-without before assuming the metadata line earns its tokens; note that dropping
-it would also make the embedded text align exactly with what lexical search
-sees, which is one less way for the two halves of §7 to disagree.
+**Settled: the prefix carries title and date only.** The tags/people line shown
+above was dropped. §2.1 keeps that metadata out of the lexical index because it
+is a filter dimension and weak embedding material, and the second half of the
+argument applies here too — a tag or surname is an out-of-vocabulary token that
+spends prefix tokens without moving the vector anywhere useful. Dropping it also
+aligns the embedded text with what lexical search sees, so the two halves of §7
+cannot disagree about what a note contains. Implemented in
+`buildContextPrefix()` (`lib/chunking.ts`).
+
+**Also implemented in the chunker, beyond the rules in §4.1:** a word-level
+split for oversized blocks. Paragraph and line splitting both yield a single
+unit for a pasted wall of text, so without it a 3,000-word single-line bullet
+sailed past the 1,000-token cap untouched — caught by testing the chunker, not
+by reading it.
 
 ### 4.3 Explicitly not doing: note-level embeddings
 
@@ -308,6 +330,10 @@ Naive "re-embed the note on save" fails three ways:
 3. **Vercel serverless reclaims the process after the response.**
    Fire-and-forget after the response is unreliable; it needs `waitUntil()` or
    an out-of-band drain.
+
+**Shipped as designed.** `lib/semantic.ts` calls the chunk sync after a
+successful save; `/api/embed-drain` is the drain; a Vercel cron entry
+(`vercel.json`) runs it every five minutes.
 
 ### 5.1 Solution: content-hash diffing + a dirty queue
 
@@ -334,13 +360,24 @@ deployment.
 - Voyage downtime means search is stale for a few minutes, not that saves fail.
 - **Backfill and incremental use the same code.** Backfill is just "insert all
   chunks with NULL embeddings and let the drain run." Resumability is free.
-  Mirrors the existing `scripts/migrate.mjs` batch pattern.
+
+**Backfill ended up browser-driven rather than a script.** Notes written before
+the feature was switched on have no chunk rows at all, so the back catalogue has
+to be walked once. `/api/backfill-chunks` chunks one page of notes per request
+and returns a cursor; the Settings button loops it, then loops the drain,
+showing progress. Two reasons this beat `scripts/migrate.mjs`'s pattern: a
+standalone script would need its own service-role credentials and provider
+wiring, and a single server-side loop would exceed a serverless timeout on any
+real corpus. The queue lives in the database, so closing the page mid-run loses
+nothing.
 
 ---
 
 ## 6. Schema sketch
 
-New migration: `supabase/migrations/005_note_chunks.sql`.
+Shipped as `supabase/migrations/006_note_chunks.sql` (005 was taken by the
+lexical ranking work). The sketch below is what landed, with one addition: a
+`projects.vector_search` flag gating the whole feature per project.
 
 ```sql
 create extension if not exists vector;
@@ -382,9 +419,17 @@ hundred milliseconds, and pgvector HNSW under a restrictive `WHERE` clause has
 over-filtering pathologies that cost more than they save at this scale. Add HNSW
 when a measurement demands it, not before.
 
-**RLS note:** similarity search will likely go through an RPC function. Be
-deliberate about `security definer` and pass `project_id` explicitly rather than
-trusting the caller.
+**RLS note:** similarity search goes through the `search_notes_ranked()` RPC.
+It is `SECURITY INVOKER` — the caller's RLS applies — and takes `project_id`
+explicitly rather than inferring it. Verified by calling it as the
+`authenticated` role with another user's `project_id` and getting zero rows;
+same for `related_notes()`.
+
+**The query embedding is passed as `text`, not `vector`.** PostgREST sends RPC
+arguments as JSON, and a JSON string cast inside the function is the shape that
+works across PostgREST versions. The internal cast is to unconstrained `vector`
+on purpose, so a dimension mismatch errors loudly at comparison time instead of
+being coerced.
 
 ---
 
@@ -405,12 +450,51 @@ similarity are not remotely comparable quantities. Roughly 15 lines.
 
 **RRF consumes ranks, and the lexical side now produces one** (§2.1). Before
 phase 0 the lexical list came back ordered by `created_at`, which would have
-made the fusion a date-vs-similarity blend rather than a relevance one. That is
-resolved: `ts_rank_cd` / `bm25` ordering gives a real `rank_in_list`.
+made the fusion a date-vs-similarity blend rather than a relevance one.
 
-Note that RRF consumes **ranks, not scores**, so it is indifferent to the 0..1
-normalisation phase 0 introduced for display. Feed it the ordinal position in
-each list and ignore the score column entirely.
+RRF consumes **ranks, not scores**, so it is indifferent to the 0..1
+normalisation phase 0 introduced for display: the implementation feeds it
+ordinal positions and ignores the score column. The fused RRF value is then
+itself normalised 0..1 for display, exactly as the lexical score was.
+
+### 7.1 The threshold is not tuning — it is what makes the feature work
+
+The single most important thing learned building this, and it is not in the plan
+above.
+
+**Cosine distance is defined for every stored chunk.** A top-N cap on the vector
+side bounds how many candidates join the fusion, but says nothing about whether
+any of them are *related*. With only a cap, a project holding fewer notes than
+the cap contributes every note it has to the candidate set — so searching
+"platform" returns the entire corpus, ranked. Observed directly in testing: a
+note reading "nothing at all", with an orthogonal vector and no lexical match,
+scored 0.488 and ranked third.
+
+So the vector side carries **two** bounds:
+
+- `p_vector_limit` (default 50) — how many candidates may join the fusion.
+- `p_max_distance` (default 0.65) — whether a candidate counts as related at all.
+
+The threshold is what makes "no semantic matches" an expressible outcome. Too
+tight and the semantic-only recall that justifies the whole feature disappears;
+too loose and everything matches. **0.65 is a starting point, not a measured
+value** — it is a function parameter rather than a constant precisely so it can
+be tuned against a real corpus without a migration. Tune it once there are real
+embeddings to look at.
+
+`related_notes()` carries the same threshold for the same reason: without it the
+sidebar panel always shows five notes no matter how unrelated, which reads as a
+recommendation rather than as "nothing here is related".
+
+### 7.2 Filter pre-resolution has a trap in it
+
+The tag/person filter tokens resolve to a list of note ids that pre-filters the
+query. That list is applied to **both** sides of the fusion — which means
+resolving it must not involve the search term. All three providers originally
+narrowed those ids by the lexical match, which would have confined vector search
+to notes that already matched the words, silently deleting exactly the
+semantic-only results hybrid search exists to produce. Fixed in the same commit;
+worth re-checking if that code is ever restructured.
 
 Aggregation: a note's vector-side rank comes from its best-scoring chunk
 (`max()`), then RRF fuses the note-level lexical and semantic rankings.
@@ -425,11 +509,16 @@ and date-range tokens should narrow the candidate set *before* the similarity
 scan. This works well — filters cut the scan cost — and it is another reason the
 ANN index can wait.
 
-**UI:** prefer an explicit toggle (a "Semantic" switch beside the search bar) over
-silently changing what the search box does. Relevance semantics changing
-invisibly is user-hostile, and the PRD's stated principle is "speed over polish."
+**UI — departed from the plan.** The suggestion here was a "Semantic" switch
+beside the search bar. What shipped is a per-project setting instead, for two
+reasons: the per-search toggle would have to be a URL parameter threaded through
+every search link, and the honest unit of consent is the project, not the query
+— the meaningful choice is "may this project's text be sent to Voyage", which is
+answered once rather than per search. Relevance semantics still do not change
+invisibly: the feature is off until switched on, and the settings copy says what
+leaves the machine.
 
-### 7.1 Query expansion — deferred
+### 7.3 Query expansion — deferred
 
 Ranked by cost/benefit:
 
@@ -440,13 +529,13 @@ Ranked by cost/benefit:
 
 All of them put an LLM call on the search path (latency + cost), which fights the
 "speed over polish" principle. Hybrid retrieval will yield more than expansion
-will. Measure before adding.
+will. Measure before adding — and with hybrid now shipped, measuring is possible.
 
-### 7.2 Near-free bonus: related notes
+### 7.4 Near-free bonus: related notes
 
-Once chunks are embedded, "notes related to this one" is a single query. The read
-view sidebar already has an inlinks ("What links here") panel for it to sit
-beside. Highest value per line of code in this entire document.
+Shipped, and the assessment held: it is a single query, and it sits beside the
+inlinks panel in the note sidebar. One panel is the links you wrote, the other
+the ones you didn't. Highest value per line of code in this entire document.
 
 ---
 
@@ -496,34 +585,48 @@ and it is the strongest argument for the MCP approach.
 
 ## 9. Risks and open questions
 
-- **Provider fan-out.** `sqlite` mode has no pgvector. Options: `sqlite-vec`, or
-  brute-force cosine in JS (genuinely fine under ~10k chunks). Either way, gate
-  it as a per-project capability flag so local mode does not break. Note the
-  `projects.trigram_search` precedent has been **removed**, not followed: it was
-  a flag with no implementation behind it. If vector search gets a flag, wire it
-  to a query on the same commit that adds the column.  `gcp` mode needs pgvector
-  enabled on Cloud SQL.
-- **Privacy posture change.** v1 was local-first and `sqlite` mode still is.
-  Sending note bodies to Voyage — and then note contents into Claude via MCP —
-  is a meaningful shift. For the Supabase deployment it is a small delta since
-  notes are already cloud-hosted. For local mode it is not; vector search should
-  probably be opt-in there, and the setting should say plainly what leaves the
-  machine.
+- **Provider fan-out — resolved.** `sqlite` mode brute-forces cosine in JS
+  (`vectorRanking()` / `fuseRRF()` in the provider), avoiding a native
+  `sqlite-vec` dependency in the one mode whose appeal is that it just runs.
+  Embeddings are stored as a Float32Array BLOB — 4KB at 1024 dims against ~15KB
+  as JSON, and this is the largest table in a local database. Fusion happens in
+  TypeScript there and in SQL on Postgres. `gcp` still needs pgvector enabled on
+  Cloud SQL, and needs migrations 005–006 applied.
+  The GCP provider calls the shared `search_notes_ranked()` function rather than
+  keeping its own copy of the ranking SQL — a second implementation of the
+  fusion logic is precisely how `relevance` stayed broken for six months.
+- **Privacy posture change — handled.** `projects.vector_search` defaults to
+  **false** everywhere, not just in local mode, and the settings copy says
+  plainly that note text is sent to Voyage AI. Two independent gates in practice:
+  no `VOYAGE_API_KEY` means nothing is embedded at all, and the settings panel
+  says so rather than silently doing nothing. Sending note contents into Claude
+  via MCP (phase 4) is a further step and deserves its own consent point.
 - **Supabase free-tier database size.** 500MB. See §3 for the dimension /
   quantization escape hatch.
-- **Backfill rate limits.** Batch 128 inputs per request. Resumability comes free
-  from the NULL-embedding queue.
-- **Model pinning.** Changing embedding model = full re-embed. The `model`/`dim`
-  columns exist so this is detectable rather than silently corrupting results.
+- **Backfill rate limits.** Batch 128 inputs per request (the API's hard cap).
+  Resumability comes free from the NULL-embedding queue. A failed drain batch
+  leaves the rows queued rather than marking them failed, so the next tick
+  retries — which means a permanently poisoned chunk retries forever, visible as
+  a pending count that never reaches zero. That is the intended trade: better
+  than silently dropping content out of the index.
+- **Model pinning — enforced, not just recorded.** Changing the embedding model
+  is a full re-embed. `model` is checked *at query time*: chunks embedded by a
+  different model are excluded from the similarity scan rather than compared
+  across incompatible vector spaces. "Rebuild from scratch" in Settings is the
+  supported way to switch. Changing `VOYAGE_DIM` additionally needs a migration,
+  since `note_chunks.embedding` is declared `vector(1024)`.
 - **Silent degradation is this codebase's established failure mode.** Relevance
   ranking (§2.1) and `trigram_search` both shipped as complete-looking UI
   surfaces over unimplemented backends, and neither surfaced an error for six
-  months. Both are now resolved, but semantic search has the same shape of risk,
-  and worse: a wrong `input_type` (§3), a model change without a re-embed, or a
-  stalled drain all return *plausible* results rather than failing. Build in
-  something observable — a count of `WHERE embedding IS NULL` on the settings
-  page, and the `model`/`dim` columns actually checked at query time rather than
-  merely stored.
+  months. Semantic search has the same shape of risk and worse: a wrong
+  `input_type` (§3), a model change without a re-embed, or a stalled drain all
+  return *plausible* results rather than failing. Countermeasures shipped:
+  the pending-chunk count is on the config page, `model` is checked at query
+  time, `input_type` is two separate named functions (`embedDocuments` /
+  `embedQuery`) rather than one flag that can default wrong, and the Voyage
+  response is validated for width and re-sorted by `index` rather than trusted
+  by array order. The settings panel distinguishes "on but no API key" from
+  "on and working", because those look identical from the search box.
   The phase 0 lesson worth carrying forward: **every claim in this document that
   was checked against a running database turned out to have an exception** —
   generated columns cannot aggregate cross-table, FTS5 rejects aliases and
@@ -535,10 +638,16 @@ and it is the strongest argument for the MCP approach.
   implementation. Those four sections have now been rewritten to match the code.
   The habit still applies: verify against the code before treating any PRD claim
   as current, and update it as part of the work.
-- **Open: does `voyage-context-3` obsolete the manual context prefix (§4.2)?**
-  Evaluate at implementation time.
-- **Open: chunk-level or note-level results in the UI?** Showing matching chunks
-  is more informative but diverges from the existing note-row list layout.
+- ~~**Open: does `voyage-context-3` obsolete the manual context prefix?**~~
+  Answered in §3: no, because chunk vectors would stop being independent and the
+  save-flow design depends on that independence.
+- **Still open: chunk-level or note-level results in the UI?** Shipped
+  note-level — a note's score comes from its best-matching chunk — because that
+  fits the existing note-row layout. Showing *which passage* matched is more
+  informative and remains unbuilt; the chunk text is stored (`content`) for
+  exactly this.
+- **Still open: the distance threshold is unmeasured.** See §7.1. It is the one
+  number in this feature picked by reasoning rather than evidence.
 
 ---
 
@@ -554,25 +663,81 @@ a coherent state.
    `sk=relevance` crash fixed. Extending `search_vec` to tags and people was
    dropped from scope as a design decision — see §2.1.
    Migration: `supabase/migrations/005_search_ranking.sql`.
-1. **Foundation.** `note_chunks` table, chunker, hash diffing, backfill script,
-   drain job. No UI change at all. Verifiable by inspecting the table.
-2. **Hybrid search.** Vector + lexical, RRF fusion, wired into the existing
-   `relevance` sort key. Plus related-notes in the read sidebar (§7.2) for
-   near-zero marginal cost. **Phase 0 dependency satisfied** — see §7.
-3. **Save-flow hook.** Dirty-marking in `saveNote()` (`lib/notes.ts:386`) and the
-   two provider equivalents, so the index stays live without a manual reindex.
+1. ~~**Foundation.**~~ **Shipped.** `note_chunks` (migration 006), chunker
+   (`lib/chunking.ts`), hash diffing, browser-driven backfill
+   (`/api/backfill-chunks`), drain (`/api/embed-drain` + Vercel cron).
+2. ~~**Hybrid search.**~~ **Shipped.** Vector + lexical, RRF fusion, wired into
+   the `relevance` sort key, plus related notes in the read sidebar (§7.4).
+3. ~~**Save-flow hook.**~~ **Shipped.** Chunk sync runs after a successful save
+   (`lib/semantic.ts`, called from the note PUT route) rather than inside each
+   provider's `save()` — one call site instead of three.
 4. **Local stdio MCP server** over the existing API routes plus the new search.
-5. **(Probably never.)** Query expansion — see §7.1.
+   The only phase left, and now the cheapest it will ever be: `search_notes`
+   is a thin wrapper over the hybrid search that already exists, and
+   `related_notes` is already a provider method.
+5. **(Probably never.)** Query expansion — see §7.3.
 
-Phase 0 was cheap, unblocks phase 2, and was worth doing even if the rest of this
-document is never built. Phases 1–2 are the bulk of the remaining value. Phase 4
-is small and delivers the Q&A goal outright. Phase 5 is likely unnecessary once
-hybrid search is in.
+Phases 0–3 delivered the bulk of the value. Phase 4 is small and delivers the
+Q&A goal outright. Phase 5 is likely unnecessary now that hybrid search is in.
 
-**Sequencing note:** phase 0 shipped before phase 1, so the "one migration"
-consolidation it suggested did not happen — `005_search_ranking.sql` exposes
-lexical rank only. When the similarity query arrives, **extend
-`search_notes_ranked()` rather than adding a parallel function**: it already
-carries the project filter, the `filter_ids` pre-filter, the date bounds, the
-tag/person aggregation and the window-function total, and duplicating that in a
-second RPC is how the three-way `list()` divergence happened in the first place.
+**Sequencing note, resolved.** Phase 0 shipped before phase 1, so the "one
+migration" consolidation did not happen: 005 exposed lexical rank and 006 added
+the vector side. The advice it carried was followed — 006 **extended**
+`search_notes_ranked()` with optional embedding arguments rather than adding a
+parallel function, so the project filter, filter-id pre-filter, date bounds,
+tag/person aggregation and window-function total have exactly one
+implementation. With `p_query_embedding` NULL the function behaves precisely as
+it did before, which is what let the change land without touching the lexical
+path's behaviour.
+
+---
+
+## 11. What building it changed about the plan
+
+Kept short and specific, because the pattern is the point: **every assumption in
+this document that was checked against a running system had an exception.** None
+of them would have failed loudly.
+
+| Planned | Actual |
+|---|---|
+| Extend `search_vec` to tags/people via the generated column | Not possible — `cannot use subquery in column generation expression`. Then dropped from scope entirely as a design decision (§2.1). |
+| `bm25()` is "one call away" on SQLite | FTS5 rejects table aliases, and refuses `bm25()` inside an aggregate. |
+| Cap the vector side at top-N | A cap alone returns the whole corpus on a small project. The distance threshold is the load-bearing bound (§7.1). |
+| `voyage-context-3` may replace the manual prefix | It would couple chunk vectors to their siblings and destroy the incremental re-embed property (§3). |
+| Backfill as a batch script | Browser-driven paging instead: no separate credentials, no serverless timeout (§5.1). |
+| Per-search "Semantic" toggle | Per-project setting: consent belongs to the project, not the query (§7). |
+| Filter ids pre-filter the query | They pre-filter *both* sides, so resolving them must not involve the search term — or semantic-only results silently vanish (§7.2). |
+
+Two further notes for whoever picks this up:
+
+**The distance threshold is the one unmeasured number.** Everything else here is
+either verified against a running database or forced by an API contract. 0.65 was
+chosen by reasoning about cosine distance, not by looking at this corpus. It is a
+function parameter for that reason.
+
+**Test with controlled vectors, not real ones.** Every similarity behaviour above
+— ranking order, the threshold, the model-mismatch exclusion, RRF fusion,
+pagination stability — was verified with one-hot vectors, where distance is
+exactly 0 or exactly 1. That makes assertions about ordering and thresholds
+deterministic and needs no API key. Reserve real embeddings for judging result
+*quality*, which is the one thing synthetic vectors cannot tell you.
+
+---
+
+## 12. Operating it
+
+- **Setup:** set `VOYAGE_API_KEY`, apply migration 006, then turn on "Semantic
+  search" per project in Settings and press **Build index**. New notes are
+  indexed automatically from then on.
+- **Keeping it current:** the Vercel cron entry in `vercel.json` hits
+  `/api/embed-drain` every five minutes, authenticated with `CRON_SECRET`.
+  Without that variable the drain is session-only and runs from the Settings
+  button. Local SQLite mode has no cron — use the button.
+- **Watching it:** the pending-chunk count on the config page is the health
+  signal. Zero means the index is current. A number that never falls means the
+  drain is failing; check the server log for `[drain]`.
+- **Changing model:** set `VOYAGE_MODEL`, then **Rebuild from scratch**. Old
+  vectors are ignored at query time until they are replaced, so search degrades
+  to lexical-only during the rebuild rather than returning nonsense.
+- **Cost:** a full re-index of ~5,000 notes is roughly 2M tokens — about 1% of
+  Voyage's 200M free tier. Incremental re-embeds are rounding error.

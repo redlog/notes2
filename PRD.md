@@ -140,6 +140,20 @@ The main list view always has a search bar and filter bar visible at the top.
 - The search is case-insensitive.
 - Clearing the search box and resubmitting returns to the full note list.
 
+### 5.1a Semantic Search (optional, per project)
+- When **Semantic search** is enabled for a project and a Voyage AI API key is
+  configured, the relevance sort also matches on *meaning*, not only on words —
+  so "the meeting where we decided to delay the platform migration" can find a
+  note that says "agreed to postpone the big move until Q3".
+- Keyword and semantic results are combined by Reciprocal Rank Fusion; a note
+  matching both ranks above one matching either. Notes below a similarity
+  threshold are not included at all, so "no semantic match" is a real outcome.
+- It is **additive**: with the setting off, or with no API key, search behaves
+  exactly as described above. Keyword search remains the backstop for the things
+  embeddings are bad at — project codenames, ticket IDs, surnames.
+- Note text is sent to Voyage AI to be embedded, which is why it is off by
+  default and per project rather than global. See §12.4.
+
 **Query syntax differs by backend.** The Postgres backends (Supabase, GCP) use
 `websearch_to_tsquery`, which additionally supports `"quoted phrases"`, `or`, and
 `-negation`. The SQLite backend strips punctuation from the query before handing
@@ -336,6 +350,11 @@ becomes an implicit AND. Unifying this is open work.
 
 ### 11.3 Per-Project Settings
 - Project name (editable)
+- Semantic search enabled/disabled (default: **disabled**). Enabling sends note
+  text to Voyage AI for embedding; the setting says so. Shows the number of
+  chunks still waiting to be embedded, and offers **Build index** (index
+  anything not yet indexed) and **Rebuild from scratch** (discard and recompute
+  every embedding — needed after changing the embedding model).
 
 ---
 
@@ -358,10 +377,15 @@ becomes an implicit AND. Unifying this is open work.
   path, and numeric tokens for them.
 
 ### 12.2 Manual Reindex
-- **Not implemented, and not currently needed.** Both backends maintain their
-  index as part of the write itself, so there is no drift for a reindex to
-  repair. If a stateful search artifact is added later (embeddings, for
-  example), this section should be revisited.
+- The keyword index still needs no reindex — both backends maintain it inside
+  the write, so there is no drift to repair.
+- The **semantic** index does, and this is where the action lives: it is a
+  stored table of embeddings, so a model change, an interrupted backfill, or a
+  chunk sync that failed after a save can leave it out of step with the notes.
+- **Build index** walks any notes that have not been chunked and embeds whatever
+  is queued. **Rebuild from scratch** additionally discards existing embeddings
+  first. Both run from the project settings page and are resumable — the queue
+  lives in the database, so interrupting them loses no work.
 
 ### 12.3 Search Result Scoring
 - Higher scores indicate more relevant notes. Scores are displayed in the list
@@ -375,6 +399,30 @@ becomes an implicit AND. Unifying this is open work.
   1.000 and everything else is a fraction of it. Normalising against the whole
   match set rather than the current page keeps the number stable across
   pagination.
+
+### 12.4 Semantic Index
+- Applies only when semantic search is enabled for the project.
+- Notes are split into chunks — one per top-level bullet or heading, with nested
+  content kept together. Chunks too small to retrieve well are merged into their
+  neighbour; oversized ones are split.
+- Each chunk is embedded with a short context header (note title and date) so a
+  bare bullet keeps its anchor. Tags and people are excluded, for the same
+  reason they are excluded from the keyword index (§12.1).
+- **Saving a note never waits on the embedding service.** The save re-chunks and
+  compares content hashes, then queues only what changed; embedding happens in
+  the background. Editing one bullet of a thirty-bullet note re-embeds one
+  chunk. If the embedding service is unavailable, search results go stale —
+  saving still works.
+- Chunks record which model produced them, and chunks from a different model are
+  ignored at query time rather than compared against incompatible vectors.
+
+### 12.5 Related Notes
+- The note view sidebar shows notes semantically closest to the one being read,
+  beside the existing "What links here" panel — the links you wrote versus the
+  ones you didn't.
+- Requires semantic search to be enabled; the panel is absent otherwise, and
+  absent when nothing clears the similarity threshold.
+
 
 ---
 
