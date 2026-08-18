@@ -24,6 +24,7 @@ export async function PATCH(request: Request) {
   if (body.projectId) {
     await provider.projects.update(body.projectId, {
       name: body.name,
+      vector_search: body.vector_search,
     });
   }
 

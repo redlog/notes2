@@ -5,12 +5,13 @@ import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 import { extractMentions, extractNoteRefs } from "@/lib/notes";
 import { renderMarkdown } from "@/lib/markdown";
+import { semanticEnabled } from "@/lib/semantic";
 import Header from "@/components/Header";
 import TagPill from "@/components/TagPill";
 import DeleteButton from "@/components/DeleteButton";
 import MoveNoteButton from "@/components/MoveNoteButton";
 import { Button } from "@/components/ui/button";
-import { Pencil, Copy, ArrowLeft, Clock, Calendar, Link2, History } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, Copy, History, Link2, Pencil, Sparkles } from "lucide-react";
 
 export async function generateMetadata({
   params,
@@ -58,10 +59,19 @@ export default async function ReadNotePage({
   );
 
   const refIds = extractNoteRefs(note.body);
-  const [noteRefs, signedImageUrls, inlinks] = await Promise.all([
+  const [noteRefs, signedImageUrls, inlinks, related] = await Promise.all([
     provider.notes.getRefTitles(refIds, user.id),
     provider.notes.getSignedImageUrls(note.images),
     provider.notes.getInlinks(noteId),
+    // Sits beside "What links here" deliberately: one panel is the links you
+    // wrote, the other the ones you didn't. Returns [] when the project has no
+    // embeddings, so the panel simply does not render.
+    activeProject && semanticEnabled(activeProject)
+      ? provider.chunks.related(noteId, 5).catch((err) => {
+          console.error("[related] lookup failed:", err);
+          return [];
+        })
+      : Promise.resolve([]),
   ]);
 
   const html = renderMarkdown(note.body, { noteRefs, imageUrls: signedImageUrls });
@@ -203,6 +213,31 @@ export default async function ReadNotePage({
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Related notes (semantic) */}
+              {related.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Related notes
+                  </p>
+                  <ul className="space-y-1">
+                    {related.map((r) => (
+                      <li key={r.id} className="flex items-baseline gap-1.5">
+                        <Link
+                          href={`/note/${r.id}`}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          {r.title || "Untitled"}
+                        </Link>
+                        <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                          {r.score.toFixed(2)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 

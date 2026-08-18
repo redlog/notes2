@@ -3,6 +3,7 @@
  * All functions accept a Supabase client already scoped to the authed user.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { embeddingModel, toVectorLiteral } from "./embeddings";
 import type {
   ListParams,
   ListResult,
@@ -102,6 +103,7 @@ export async function listNotes(
     sortOrder = "desc",
     timeMin,
     timeMax,
+    queryEmbedding,
   } = params;
 
   const offset = (page - 1) * perPage;
@@ -196,12 +198,14 @@ export async function listNotes(
       .eq("project_id", projectId);
 
     if (filterIds !== null) candidateQuery = candidateQuery.in("id", filterIds);
-    if (search) {
-      candidateQuery = candidateQuery.textSearch("search_vec", search, {
-        type: "websearch",
-        config: "english",
-      });
-    }
+    // The search term is deliberately NOT applied here. This query resolves
+    // which notes satisfy the tag/person *filters*, and the result is handed to
+    // the ranked path as `p_filter_ids`, which pre-filters the semantic side as
+    // well as the lexical one. Narrowing it by the lexical match would confine
+    // vector search to notes that already matched the words — silently
+    // removing exactly the semantic-only results hybrid search exists to find.
+    // Both query paths below apply `search` themselves, so this only widens the
+    // candidate set, never the final result.
     if (timeMin) candidateQuery = candidateQuery.gte("created_at", timeMin);
     if (timeMax) candidateQuery = candidateQuery.lt("created_at", exclusiveEnd(timeMax));
 
@@ -260,6 +264,10 @@ export async function listNotes(
       p_sort_order: sortOrder,
       p_limit: perPage,
       p_offset: offset,
+      // Null when the project has no embeddings or vector search is off, in
+      // which case the RPC stays purely lexical.
+      p_query_embedding: queryEmbedding ? toVectorLiteral(queryEmbedding) : null,
+      p_model: queryEmbedding ? embeddingModel() : null,
     });
     if (error) throw error;
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
+import { syncNoteChunks } from "@/lib/semantic";
 
 const MAX_BODY_BYTES = 500_000;
 const MAX_TAGS = 200;
@@ -56,6 +57,20 @@ export async function PUT(
   }
 
   const result = await provider.notes.save(noteId, title, body, tags, people, version);
+
+  // Re-chunk after a successful save so the semantic index tracks the note.
+  // Skipped on a version conflict — nothing was written, so there is nothing to
+  // reconcile against. Pure database work, no Voyage call: see lib/semantic.ts.
+  if (result.ok && !result.conflict) {
+    const note = await provider.notes.get(noteId);
+    const project = note
+      ? await provider.projects.getActive(user.id, note.project_id)
+      : null;
+    if (note && project) {
+      await syncNoteChunks(provider, noteId, project, title, body, note.created_at);
+    }
+  }
+
   return NextResponse.json(result);
 }
 

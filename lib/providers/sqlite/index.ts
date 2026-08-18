@@ -18,8 +18,18 @@ import { unlink } from "fs/promises";
 import { join, dirname } from "path";
 import { extractMentions, extractNoteRefs, buildPreview, exclusiveEnd } from "@/lib/notes";
 import { getLocalDbPath, getLocalImagesDir } from "@/lib/local-storage";
-import type { DataProvider, NotesDataProvider, ProjectsDataProvider, BiosDataProvider } from "../types";
+import { cosineSimilarity, embeddingModel } from "@/lib/embeddings";
 import type {
+  ChunksDataProvider,
+  DataProvider,
+  NotesDataProvider,
+  ProjectsDataProvider,
+  BiosDataProvider,
+} from "../types";
+import type {
+  ChunkSyncResult,
+  PendingChunk,
+  RelatedNote,
   ListParams,
   ListResult,
   Note,
@@ -49,6 +59,7 @@ function getDb(): Database.Database {
   db.pragma("foreign_keys = ON");
 
   initSchema(db);
+  migrateSchema(db);
   ensureLocalUser(db);
 
   globalForDb.sqliteDb = db;
@@ -150,6 +161,27 @@ function initSchema(db: Database.Database) {
 
     CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(title, body);
 
+    CREATE TABLE IF NOT EXISTS note_chunks (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id      INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      project_id   TEXT    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      chunk_index  INTEGER NOT NULL,
+      content      TEXT    NOT NULL,
+      embed_text   TEXT    NOT NULL,
+      content_hash TEXT    NOT NULL,
+      token_count  INTEGER,
+      -- Float32Array buffer, not JSON: 1024 dims is 4KB packed against ~15KB
+      -- as text, and this table is the largest thing in a local database.
+      embedding    BLOB,
+      model        TEXT,
+      dim          INTEGER,
+      embedded_at  TEXT,
+      UNIQUE(note_id, chunk_index)
+    );
+
+    CREATE INDEX IF NOT EXISTS note_chunks_note_idx    ON note_chunks(note_id);
+    CREATE INDEX IF NOT EXISTS note_chunks_project_idx ON note_chunks(project_id);
+
     CREATE INDEX IF NOT EXISTS notes_project_idx  ON notes(project_id);
     CREATE INDEX IF NOT EXISTS notes_created_idx  ON notes(created_at DESC);
     CREATE INDEX IF NOT EXISTS notes_updated_idx  ON notes(updated_at DESC);
@@ -159,6 +191,22 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS note_ppl_prsn_idx  ON note_people(person);
     CREATE INDEX IF NOT EXISTS note_img_note_idx  ON note_images(note_id);
   `);
+}
+
+/**
+ * SQLite has no "ADD COLUMN IF NOT EXISTS", and CREATE TABLE IF NOT EXISTS is a
+ * no-op on a database that already has the table — so a column added after a
+ * local database was first created has to be applied explicitly. Without this,
+ * an existing local notes.db keeps working but silently lacks the new column.
+ */
+function migrateSchema(db: Database.Database) {
+  const columns = new Set(
+    (db.prepare("SELECT name FROM pragma_table_info('projects')").all() as { name: string }[])
+      .map((r) => r.name)
+  );
+  if (!columns.has("vector_search")) {
+    db.exec("ALTER TABLE projects ADD COLUMN vector_search INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 function ensureLocalUser(db: Database.Database) {
@@ -193,6 +241,98 @@ function buildFtsQuery(search: string): string {
     .replace(/[^\w\s\-']/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// ── Vector helpers (no pgvector here) ─────────────────────────────────────────
+
+/**
+ * SQLite mode has no pgvector, so similarity is brute-forced in JS. That is
+ * genuinely fine at personal-notes scale — a few thousand chunks is a few
+ * milliseconds of dot products — and it avoids a native extension dependency
+ * (sqlite-vec) in the one mode whose whole appeal is that it just runs.
+ * See docs/vector-search-and-rag.md §9.
+ */
+function vecToBlob(v: number[]): Buffer {
+  return Buffer.from(new Float32Array(v).buffer);
+}
+
+function blobToVec(b: Buffer): Float32Array {
+  // Copy rather than view: better-sqlite3 may hand back a Buffer that is a
+  // slice of a larger pooled ArrayBuffer, and a bare view over it would read
+  // neighbouring rows' bytes.
+  const copy = b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+  return new Float32Array(copy);
+}
+
+/** Cosine *distance*, to match pgvector's `<=>` so thresholds mean the same. */
+function cosineDistance(a: ArrayLike<number>, b: ArrayLike<number>): number {
+  return 1 - cosineSimilarity(a, b);
+}
+
+/** Matches the p_max_distance / p_vector_limit defaults in migration 006. */
+const MAX_VECTOR_DISTANCE = 0.65;
+const VECTOR_CANDIDATES = 50;
+const RRF_K = 60;
+
+interface ChunkVecRow {
+  note_id: number;
+  embedding: Buffer;
+}
+
+/**
+ * Notes ranked by their best-matching chunk, thresholded and capped.
+ *
+ * Both bounds matter. Cosine distance is defined for every stored chunk, so
+ * without the threshold every note holding an embedding becomes a candidate and
+ * a search returns the whole project ranked.
+ */
+function vectorRanking(
+  db: Database.Database,
+  projectId: string,
+  queryEmbedding: number[],
+  model: string,
+  allowedIds: number[] | null
+): number[] {
+  const rows = db
+    .prepare(
+      `SELECT note_id, embedding FROM note_chunks
+        WHERE project_id = ? AND embedding IS NOT NULL AND model = ?`
+    )
+    .all(projectId, model) as ChunkVecRow[];
+
+  const best = new Map<number, number>();
+  const allowed = allowedIds === null ? null : new Set(allowedIds);
+
+  for (const r of rows) {
+    if (allowed && !allowed.has(r.note_id)) continue;
+    const d = cosineDistance(queryEmbedding, blobToVec(r.embedding));
+    const prior = best.get(r.note_id);
+    if (prior === undefined || d < prior) best.set(r.note_id, d);
+  }
+
+  return [...best.entries()]
+    .filter(([, d]) => d <= MAX_VECTOR_DISTANCE)
+    .sort((a, b) => a[1] - b[1] || b[0] - a[0])
+    .slice(0, VECTOR_CANDIDATES)
+    .map(([id]) => id);
+}
+
+/**
+ * Reciprocal Rank Fusion over two ranked id lists.
+ *
+ * RRF consumes ranks rather than scores, which is what makes it valid to
+ * combine bm25 with cosine distance — quantities that are not comparable and
+ * whose raw values must never be added together.
+ */
+function fuseRRF(lexical: number[], semantic: number[]): { id: number; rrf: number }[] {
+  const scores = new Map<number, number>();
+  const add = (ids: number[]) =>
+    ids.forEach((id, i) => scores.set(id, (scores.get(id) ?? 0) + 1 / (RRF_K + i + 1)));
+  add(lexical);
+  add(semantic);
+  return [...scores.entries()]
+    .map(([id, rrf]) => ({ id, rrf }))
+    .sort((a, b) => b.rrf - a.rrf || b.id - a.id);
 }
 
 function upsertTagsAndPeople(
@@ -285,6 +425,7 @@ type ProjectRow = {
   id: string;
   user_id: string;
   name: string;
+  vector_search: number;
   created_at: string;
 };
 
@@ -293,6 +434,7 @@ function projectRowToProject(row: ProjectRow): Project {
     id: row.id,
     user_id: row.user_id,
     name: row.name,
+    vector_search: !!row.vector_search,
     created_at: row.created_at,
   };
 }
@@ -312,6 +454,7 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         sortOrder = "desc",
         timeMin,
         timeMax,
+        queryEmbedding,
       } = params;
       const offset = (page - 1) * perPage;
 
@@ -376,10 +519,11 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         const baseConditions: string[] = ["n.project_id = ?"];
         const baseValues: unknown[] = [projectId];
 
-        if (ftsQuery) {
-          baseConditions.push("n.id IN (SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?)");
-          baseValues.push(ftsQuery);
-        }
+        // The search term is deliberately NOT applied here. These ids pre-filter
+        // the semantic side as well as the lexical one, so narrowing them by the
+        // lexical match would confine vector search to notes that already
+        // matched the words — removing exactly the semantic-only results hybrid
+        // search exists to find. Both paths below apply the search themselves.
         if (filterIds !== null) {
           baseConditions.push(`n.id IN (${filterIds.map(() => "?").join(",")})`);
           baseValues.push(...filterIds);
@@ -474,15 +618,71 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
       ].join(" AND ");
       const values = [...(ftsQuery ? [ftsQuery] : []), ...restValues];
 
-      const total = (
-        db.prepare(`SELECT COUNT(*) AS cnt FROM notes n WHERE ${where}`).get(...values) as { cnt: number }
-      ).cnt;
-
       let rows: NoteRow[];
+      let total: number;
+      // Populated on both ranked paths; null on the date-sorted path, where
+      // there is no score to show.
+      let scoreById: Map<number, number> | null = null;
       // Most-negative bm25 across the whole match set, used to normalise.
       let bestScore = 0;
 
-      if (useRelevance) {
+      const useHybrid = useRelevance && !!queryEmbedding;
+
+      if (useHybrid) {
+        // ── Hybrid: lexical + semantic, fused with RRF ────────────────────
+        // Fusion has to happen across the *whole* candidate set before
+        // pagination — a page of one list cannot be fused with a page of the
+        // other — so both rankings are materialised in full and the fused list
+        // is what gets paginated. That is affordable here precisely because
+        // this is the single-user local provider.
+        const rankedWhere = ["notes_fts MATCH ?", ...restConditions].join(" AND ");
+        const rankedValues = [ftsQuery, ...restValues];
+
+        const lexicalIds = ftsQuery
+          ? (
+              db
+                .prepare(
+                  `SELECT n.id FROM notes n JOIN notes_fts ON notes_fts.rowid = n.id
+                    WHERE ${rankedWhere}
+                    ORDER BY bm25(notes_fts) ASC, n.id DESC`
+                )
+                .all(...rankedValues) as { id: number }[]
+            ).map((r) => r.id)
+          : [];
+
+        const semanticIds = vectorRanking(
+          db,
+          projectId,
+          queryEmbedding!,
+          embeddingModel(),
+          filterIds
+        );
+
+        const fused = fuseRRF(lexicalIds, semanticIds);
+        total = fused.length;
+
+        const maxRrf = fused.length ? fused[0].rrf : 0;
+        scoreById = new Map(fused.map((f) => [f.id, maxRrf > 0 ? f.rrf / maxRrf : 0]));
+
+        const pageIds = (dir === "ASC" ? [...fused].reverse() : fused)
+          .slice(offset, offset + perPage)
+          .map((f) => f.id);
+
+        if (pageIds.length === 0) {
+          return { notes: [], total, page, perPage, sortKey: appliedSortKey, sortOrder };
+        }
+
+        const fetched = db
+          .prepare(
+            `SELECT id, title, body, created_at, updated_at FROM notes
+              WHERE id IN (${pageIds.map(() => "?").join(",")})`
+          )
+          .all(...pageIds) as NoteRow[];
+
+        // Restore fused order — SQL returns rows in whatever order it likes.
+        const byId = new Map(fetched.map((r) => [r.id, r]));
+        rows = pageIds.map((id) => byId.get(id)).filter(Boolean) as NoteRow[];
+      } else if (useRelevance) {
         const rankedWhere = ["notes_fts MATCH ?", ...restConditions].join(" AND ");
         const rankedValues = [ftsQuery, ...restValues];
 
@@ -519,6 +719,12 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
               LIMIT ? OFFSET ?`
           )
           .all(...rankedValues, perPage, offset) as NoteRow[];
+
+        total = (
+          db.prepare(`SELECT COUNT(*) AS cnt FROM notes n WHERE ${where}`).get(...values) as {
+            cnt: number;
+          }
+        ).cnt;
       } else {
         rows = db
           .prepare(
@@ -528,6 +734,12 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
              LIMIT ? OFFSET ?`
           )
           .all(...values, perPage, offset) as NoteRow[];
+
+        total = (
+          db.prepare(`SELECT COUNT(*) AS cnt FROM notes n WHERE ${where}`).get(...values) as {
+            cnt: number;
+          }
+        ).cnt;
       }
 
       if (!rows.length) {
@@ -573,9 +785,11 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         tags: tagMap.get(row.id) ?? [],
         people: personMap.get(row.id) ?? [],
         preview: buildPreview(row.body),
-        ...(useRelevance
-          ? { score: bestScore < 0 ? Number(row.raw_score) / bestScore : 0 }
-          : {}),
+        ...(scoreById
+          ? { score: scoreById.get(row.id) ?? 0 }
+          : useRelevance
+            ? { score: bestScore < 0 ? Number(row.raw_score) / bestScore : 0 }
+            : {}),
       }));
 
       return { notes, total, page, perPage, sortKey: appliedSortKey, sortOrder };
@@ -998,13 +1212,19 @@ function buildProjectsProvider(db: Database.Database): ProjectsDataProvider {
       db.prepare(
         "INSERT INTO projects (id, user_id, name, created_at) VALUES (?, ?, ?, ?)"
       ).run(id, userId, name, now);
-      return { id, user_id: userId, name, created_at: now };
+      return { id, user_id: userId, name, vector_search: false, created_at: now };
     },
 
     async update(projectId, updates): Promise<void> {
       if (updates.name !== undefined) {
         db.prepare("UPDATE projects SET name = ? WHERE id = ?").run(
           updates.name,
+          projectId
+        );
+      }
+      if (updates.vector_search !== undefined) {
+        db.prepare("UPDATE projects SET vector_search = ? WHERE id = ?").run(
+          updates.vector_search ? 1 : 0,
           projectId
         );
       }
@@ -1082,11 +1302,190 @@ function buildBiosProvider(db: Database.Database): BiosDataProvider {
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
+// ── Chunks provider ───────────────────────────────────────────────────────────
+
+function buildChunksProvider(db: Database.Database): ChunksDataProvider {
+  return {
+    async sync(noteId, projectId, chunks): Promise<ChunkSyncResult> {
+      const existing = new Map<number, string>(
+        (
+          db
+            .prepare("SELECT chunk_index, content_hash FROM note_chunks WHERE note_id = ?")
+            .all(noteId) as { chunk_index: number; content_hash: string }[]
+        ).map((r) => [r.chunk_index, r.content_hash])
+      );
+
+      const result: ChunkSyncResult = { inserted: 0, updated: 0, deleted: 0, unchanged: 0 };
+
+      const upsert = db.prepare(
+        `INSERT INTO note_chunks
+           (note_id, project_id, chunk_index, content, embed_text, content_hash,
+            token_count, embedding, model, dim, embedded_at)
+         VALUES (?,?,?,?,?,?,?,NULL,NULL,NULL,NULL)
+         ON CONFLICT(note_id, chunk_index) DO UPDATE SET
+           content      = excluded.content,
+           embed_text   = excluded.embed_text,
+           content_hash = excluded.content_hash,
+           token_count  = excluded.token_count,
+           -- Cleared deliberately: an edited chunk must not keep the vector of
+           -- text that no longer exists. NULL also re-queues it for the drain.
+           embedding    = NULL,
+           model        = NULL,
+           dim          = NULL,
+           embedded_at  = NULL`
+      );
+
+      const run = db.transaction(() => {
+        for (const c of chunks) {
+          const prior = existing.get(c.chunkIndex);
+          if (prior === c.contentHash) {
+            result.unchanged++;
+            continue;
+          }
+          if (prior !== undefined) result.updated++;
+          else result.inserted++;
+          upsert.run(
+            noteId, projectId, c.chunkIndex, c.content, c.embedText, c.contentHash, c.tokenCount
+          );
+        }
+
+        const keep = chunks.map((c) => c.chunkIndex);
+        const info = keep.length
+          ? db
+              .prepare(
+                `DELETE FROM note_chunks
+                  WHERE note_id = ? AND chunk_index NOT IN (${keep.map(() => "?").join(",")})`
+              )
+              .run(noteId, ...keep)
+          : db.prepare("DELETE FROM note_chunks WHERE note_id = ?").run(noteId);
+        result.deleted = info.changes;
+      });
+      run();
+
+      return result;
+    },
+
+    async notesToChunk(projectId, afterId, limit) {
+      return db
+        .prepare(
+          `SELECT id, title, body, created_at FROM notes
+            WHERE project_id = ? AND id > ? ORDER BY id LIMIT ?`
+        )
+        .all(projectId, afterId, limit) as {
+        id: number;
+        title: string;
+        body: string;
+        created_at: string;
+      }[];
+    },
+
+    async pending(limit, projectId): Promise<PendingChunk[]> {
+      return (
+        projectId
+          ? db
+              .prepare(
+                `SELECT id, embed_text FROM note_chunks
+                  WHERE embedding IS NULL AND project_id = ? ORDER BY id LIMIT ?`
+              )
+              .all(projectId, limit)
+          : db
+              .prepare(
+                "SELECT id, embed_text FROM note_chunks WHERE embedding IS NULL ORDER BY id LIMIT ?"
+              )
+              .all(limit)
+      ) as PendingChunk[];
+    },
+
+    async writeEmbeddings(rows, model, dim): Promise<void> {
+      const now = new Date().toISOString();
+      const stmt = db.prepare(
+        "UPDATE note_chunks SET embedding = ?, model = ?, dim = ?, embedded_at = ? WHERE id = ?"
+      );
+      db.transaction(() => {
+        for (const r of rows) stmt.run(vecToBlob(r.embedding), model, dim, now, r.id);
+      })();
+    },
+
+    async pendingCount(projectId): Promise<number> {
+      return (
+        db
+          .prepare(
+            "SELECT COUNT(*) AS c FROM note_chunks WHERE project_id = ? AND embedding IS NULL"
+          )
+          .get(projectId) as { c: number }
+      ).c;
+    },
+
+    async related(noteId, limit = 5): Promise<RelatedNote[]> {
+      const model = embeddingModel();
+      const src = db
+        .prepare(
+          `SELECT project_id, embedding FROM note_chunks
+            WHERE note_id = ? AND embedding IS NOT NULL AND model = ?`
+        )
+        .all(noteId, model) as { project_id: string; embedding: Buffer }[];
+      if (!src.length) return [];
+
+      const others = db
+        .prepare(
+          `SELECT note_id, embedding FROM note_chunks
+            WHERE project_id = ? AND note_id != ? AND embedding IS NOT NULL AND model = ?`
+        )
+        .all(src[0].project_id, noteId, model) as { note_id: number; embedding: Buffer }[];
+
+      const srcVecs = src.map((r) => blobToVec(r.embedding));
+      const best = new Map<number, number>();
+      for (const o of others) {
+        const v = blobToVec(o.embedding);
+        let d = Infinity;
+        for (const sv of srcVecs) d = Math.min(d, cosineDistance(sv, v));
+        const prior = best.get(o.note_id);
+        if (prior === undefined || d < prior) best.set(o.note_id, d);
+      }
+
+      const near = [...best.entries()]
+        .filter(([, d]) => d <= MAX_VECTOR_DISTANCE)
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, limit);
+      if (!near.length) return [];
+
+      const ids = near.map(([id]) => id);
+      const rows = db
+        .prepare(
+          `SELECT id, title, created_at FROM notes WHERE id IN (${ids.map(() => "?").join(",")})`
+        )
+        .all(...ids) as { id: number; title: string; created_at: string }[];
+      const byId = new Map(rows.map((r) => [r.id, r]));
+
+      return near
+        .map(([id, d]) => {
+          const row = byId.get(id);
+          if (!row) return null;
+          return {
+            id: row.id,
+            title: row.title,
+            created_at: row.created_at,
+            score: Math.max(0, 1 - d),
+          };
+        })
+        .filter(Boolean) as RelatedNote[];
+    },
+
+    async clearEmbeddings(projectId): Promise<void> {
+      db.prepare(
+        `UPDATE note_chunks SET embedding = NULL, model = NULL, dim = NULL, embedded_at = NULL
+          WHERE project_id = ?`
+      ).run(projectId);
+    },
+  };
+}
+
 export function createSqliteProvider(): DataProvider {
   const db = getDb();
   return {
     notes: buildNotesProvider(db),
     projects: buildProjectsProvider(db),
     bios: buildBiosProvider(db),
+    chunks: buildChunksProvider(db),
   };
 }

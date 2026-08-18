@@ -8,6 +8,7 @@ import NoteRow from "@/components/NoteRow";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Download, ArrowUpDown } from "lucide-react";
 import type { SortKey, SortOrder } from "@/lib/types";
+import { embedSearchQuery } from "@/lib/semantic";
 
 interface SearchParams {
   project?: string;
@@ -53,6 +54,11 @@ export default async function HomePage({
   const timeMin = sp.time_min;
   const timeMax = sp.time_max;
 
+  // Embedded before the list query rather than inside the provider: the
+  // providers never call Voyage themselves, so they stay testable without a
+  // network, and a failure here simply yields undefined and lexical ranking.
+  const queryEmbedding = await embedSearchQuery(activeProject, search, sortKey);
+
   const [listResult, tagCounts, peopleCounts, earliestDate] = await Promise.all([
     provider.notes.list({
       projectId: activeProject.id,
@@ -64,6 +70,7 @@ export default async function HomePage({
       sortOrder,
       timeMin,
       timeMax,
+      queryEmbedding,
     }),
     provider.notes.getTagCounts(activeProject.id),
     provider.notes.getPersonCounts(activeProject.id),

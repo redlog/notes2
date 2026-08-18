@@ -19,9 +19,18 @@
 import { Pool } from "pg";
 import { Storage } from "@google-cloud/storage";
 import { cookies } from "next/headers";
-import { extractMentions, extractNoteRefs } from "@/lib/notes";
-import type { DataProvider, NotesDataProvider, ProjectsDataProvider } from "../types";
+import { embeddingModel, toVectorLiteral } from "@/lib/embeddings";
+import { extractMentions, extractNoteRefs, buildPreview, exclusiveEnd } from "@/lib/notes";
 import type {
+  ChunksDataProvider,
+  DataProvider,
+  NotesDataProvider,
+  ProjectsDataProvider,
+} from "../types";
+import type {
+  ChunkSyncResult,
+  PendingChunk,
+  RelatedNote,
   ListParams,
   ListResult,
   Note,
@@ -151,6 +160,7 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         sortOrder = "desc",
         timeMin,
         timeMax,
+        queryEmbedding,
       } = params;
 
       const offset = (page - 1) * perPage;
@@ -163,66 +173,49 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
       const exclusivePeople = filterTokens.filter((t) => t.startsWith("+@")).map((t) => t.slice(2));
       const excludedTags    = filterTokens.filter((t) => t.startsWith("~#")).map((t) => t.slice(2));
 
-      const sqlVals: unknown[] = [projectId];
-      let pIdx = 2;
-      const conditions: string[] = ["n.project_id = $1"];
-
-      // Remembered so the same bound parameter can be reused by ts_rank_cd()
-      // below — re-pushing the term would parse the tsquery twice.
-      let searchParamIdx: number | null = null;
-      if (search) {
-        searchParamIdx = pIdx;
-        conditions.push(`n.search_vec @@ websearch_to_tsquery('english', $${pIdx})`);
-        sqlVals.push(search);
-        pIdx++;
-      }
-      if (timeMin) {
-        conditions.push(`n.created_at >= $${pIdx}`);
-        sqlVals.push(timeMin);
-        pIdx++;
-      }
-      if (timeMax) {
-        const end = new Date(timeMax);
-        end.setDate(end.getDate() + 1);
-        conditions.push(`n.created_at < $${pIdx}`);
-        sqlVals.push(end.toISOString());
-        pIdx++;
-      }
-
-      // `relevance` is not a column — it is ts_rank_cd() over the tsquery, so
-      // it only means something when there is a search term to rank against.
+      // `relevance` is not a column — it is a ranking function over the query,
+      // so it only means something when there is a search term to rank against.
       // Without one, fall back to a date sort rather than emitting
       // `ORDER BY relevance` against a column that does not exist.
-      const useRelevance = sortKey === "relevance" && searchParamIdx !== null;
+      const useRelevance = sortKey === "relevance" && search.trim() !== "";
       const dateSortKey = sortKey === "relevance" ? "created_at" : sortKey;
       const appliedSortKey: SortKey = useRelevance ? "relevance" : dateSortKey;
       const orderDir = sortOrder === "asc" ? "ASC" : "DESC";
+      const endBound = timeMax ? exclusiveEnd(timeMax) : null;
 
-      const rankExpr = useRelevance
-        ? `ts_rank_cd(n.search_vec, websearch_to_tsquery('english', $${searchParamIdx}))`
-        : null;
-
-      for (const person of [...requiredPeople, ...exclusivePeople]) {
-        conditions.push(`EXISTS (SELECT 1 FROM note_people np_f WHERE np_f.note_id = n.id AND np_f.person = $${pIdx})`);
-        sqlVals.push(person);
-        pIdx++;
-      }
-
-      // ── Narrow to exact matches for filters that need full tag/person sets ──
-      // requiredTags isn't enforced in SQL above, and "+@person"/"+#tag" mean
-      // the note's header people/tags must be *exactly* that set (not just
-      // contain it), while "~#tag" excludes notes mentioning a tag at all.
-      // These checks need each candidate's full tag/person list, so resolve
-      // the exact matching note ids *before* counting/paginating — otherwise
-      // total_count (and page contents) would reflect the looser "contains"
-      // match instead of the filter actually applied to the results.
+      // ── Resolve tag/person filter tokens to note ids ──────────────────────
+      // "+@person"/"+#tag" mean the note's header people/tags must be *exactly*
+      // that set (not just contain it), and "~#tag" excludes notes mentioning a
+      // tag at all. Both need each candidate's full tag/person list, so the
+      // exact ids are resolved before counting or paginating — otherwise the
+      // reported total would reflect the looser "contains" match.
+      //
+      // The search term is deliberately NOT part of this query. These ids
+      // pre-filter the semantic side as well as the lexical one, so narrowing
+      // them by the lexical match would confine vector search to notes that
+      // already matched the words, silently removing the semantic-only results
+      // hybrid search exists to find.
+      let filterIds: number[] | null = null;
       if (
         requiredTags.length > 0 ||
+        requiredPeople.length > 0 ||
         exclusiveTags.length > 0 ||
         exclusivePeople.length > 0 ||
         excludedTags.length > 0
       ) {
-        const candWhere = conditions.join(" AND ");
+        const cVals: unknown[] = [projectId];
+        const cConds: string[] = ["n.project_id = $1"];
+        let cIdx = 2;
+        if (timeMin) { cConds.push(`n.created_at >= $${cIdx}`); cVals.push(timeMin); cIdx++; }
+        if (endBound) { cConds.push(`n.created_at < $${cIdx}`); cVals.push(endBound); cIdx++; }
+        for (const person of [...requiredPeople, ...exclusivePeople]) {
+          cConds.push(
+            `EXISTS (SELECT 1 FROM note_people np_f WHERE np_f.note_id = n.id AND np_f.person = $${cIdx})`
+          );
+          cVals.push(person);
+          cIdx++;
+        }
+
         const { rows: candRows } = await db.query(
           `SELECT n.id,
              COALESCE(
@@ -236,9 +229,9 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
            FROM notes n
            LEFT JOIN note_tags   nt ON nt.note_id = n.id
            LEFT JOIN note_people np ON np.note_id = n.id
-           WHERE ${candWhere}
+           WHERE ${cConds.join(" AND ")}
            GROUP BY n.id`,
-          sqlVals
+          cVals
         );
 
         let candidates = candRows as {
@@ -264,59 +257,98 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         if (excludedTags.length)
           candidates = candidates.filter((n) => !excludedTags.some((t) => n.tags.some((nt) => nt.tag === t)));
 
-        const exactIds = candidates.map((c) => c.id);
-        if (exactIds.length === 0) {
+        filterIds = candidates.map((c) => c.id);
+        if (filterIds.length === 0) {
           return { notes: [], total: 0, page, perPage, sortKey: appliedSortKey, sortOrder };
         }
+      }
 
+      // ── Relevance path ────────────────────────────────────────────────────
+      // Calls the same search_notes_ranked() function the Supabase provider
+      // uses (supabase/migrations/005 + 006) rather than reimplementing
+      // ts_rank_cd and the RRF fusion in SQL here. Cloud SQL is Postgres too,
+      // so a second copy of the ranking logic would be exactly the kind of
+      // per-provider divergence that left `relevance` broken for six months.
+      //
+      // Requires the migrations to have been applied to the Cloud SQL database.
+      if (useRelevance) {
+        const { rows } = await db.query(
+          `SELECT * FROM search_notes_ranked($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [
+            projectId,
+            search,
+            filterIds,
+            timeMin ?? null,
+            endBound,
+            sortOrder,
+            perPage,
+            offset,
+            queryEmbedding ? toVectorLiteral(queryEmbedding) : null,
+            queryEmbedding ? embeddingModel() : null,
+          ]
+        );
+
+        const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : (v as string));
+        return {
+          notes: rows.map((row) => ({
+            id: row.out_id as number,
+            title: row.out_title as string,
+            created_at: iso(row.out_created_at),
+            updated_at: iso(row.out_updated_at),
+            tags: row.out_tags ?? [],
+            people: row.out_people ?? [],
+            score: Number(row.out_score),
+            preview: buildPreview((row.out_body as string) ?? ""),
+          })),
+          total: rows.length > 0 ? Number(rows[0].out_total) : 0,
+          page,
+          perPage,
+          sortKey: appliedSortKey,
+          sortOrder,
+        };
+      }
+
+      // ── Date-sorted path ──────────────────────────────────────────────────
+      const sqlVals: unknown[] = [projectId];
+      const conditions: string[] = ["n.project_id = $1"];
+      let pIdx = 2;
+
+      if (search) {
+        conditions.push(`n.search_vec @@ websearch_to_tsquery('english', $${pIdx})`);
+        sqlVals.push(search);
+        pIdx++;
+      }
+      if (timeMin) { conditions.push(`n.created_at >= $${pIdx}`); sqlVals.push(timeMin); pIdx++; }
+      if (endBound) { conditions.push(`n.created_at < $${pIdx}`); sqlVals.push(endBound); pIdx++; }
+      if (filterIds !== null) {
         conditions.push(`n.id = ANY($${pIdx})`);
-        sqlVals.push(exactIds);
+        sqlVals.push(filterIds);
         pIdx++;
       }
 
-      const whereClause = conditions.join(" AND ");
       sqlVals.push(perPage, offset);
 
-      const sql = `
-        SELECT
-          n.id, n.title, n.created_at, n.updated_at,
-          COALESCE(
-            json_agg(DISTINCT jsonb_build_object('tag', nt.tag, 'is_header', nt.is_header))
-            FILTER (WHERE nt.tag IS NOT NULL), '[]'
-          ) AS tags,
-          COALESCE(
-            json_agg(DISTINCT jsonb_build_object('person', np.person, 'is_header', np.is_header))
-            FILTER (WHERE np.person IS NOT NULL), '[]'
-          ) AS people,
-          COUNT(*) OVER() AS total_count
-          ${rankExpr ? `, ${rankExpr} AS raw_score, MAX(${rankExpr}) OVER () AS max_score` : ""}
-        FROM notes n
-        LEFT JOIN note_tags   nt ON nt.note_id = n.id
-        LEFT JOIN note_people np ON np.note_id = n.id
-        WHERE ${whereClause}
-        GROUP BY n.id
-        ORDER BY ${
-          rankExpr
-            // Tiebreak on id: equal ts_rank_cd is common on short notes, and
-            // without it LIMIT/OFFSET pagination can repeat or skip rows.
-            ? `raw_score ${orderDir}, n.id DESC`
-            : `n.${dateSortKey} ${orderDir}`
-        }
-        LIMIT $${pIdx} OFFSET $${pIdx + 1}
-      `;
-
-      const { rows } = await db.query(sql, sqlVals);
-
-      const totalCount = rows.length > 0 ? Number(rows[0].total_count) : 0;
-
-      // requiredTags/exclusive*/excluded* are now resolved into the SQL WHERE
-      // via `exactIds` above; requiredPeople is enforced via the EXISTS
-      // conditions. No further client-side filtering is needed here.
-      // Normalised 0..1 against the top match of the whole result set (not the
-      // page), so it stays stable across pagination and means the same thing
-      // as the other providers' scores. Raw ts_rank_cd values are not exposed:
-      // they are not comparable to SQLite's bm25 and mean nothing to a user.
-      const maxScore = rows.length > 0 ? Number(rows[0].max_score ?? 0) : 0;
+      const { rows } = await db.query(
+        `SELECT
+           n.id, n.title, n.body, n.created_at, n.updated_at,
+           COALESCE(
+             json_agg(DISTINCT jsonb_build_object('tag', nt.tag, 'is_header', nt.is_header))
+             FILTER (WHERE nt.tag IS NOT NULL), '[]'
+           ) AS tags,
+           COALESCE(
+             json_agg(DISTINCT jsonb_build_object('person', np.person, 'is_header', np.is_header))
+             FILTER (WHERE np.person IS NOT NULL), '[]'
+           ) AS people,
+           COUNT(*) OVER() AS total_count
+         FROM notes n
+         LEFT JOIN note_tags   nt ON nt.note_id = n.id
+         LEFT JOIN note_people np ON np.note_id = n.id
+         WHERE ${conditions.join(" AND ")}
+         GROUP BY n.id
+         ORDER BY n.${dateSortKey} ${orderDir}
+         LIMIT $${pIdx} OFFSET $${pIdx + 1}`,
+        sqlVals
+      );
 
       const notes: NoteListItem[] = rows.map((row) => ({
         id: row.id as number,
@@ -325,14 +357,12 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         updated_at: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
         tags: row.tags ?? [],
         people: row.people ?? [],
-        ...(useRelevance
-          ? { score: maxScore > 0 ? Number(row.raw_score) / maxScore : 0 }
-          : {}),
+        preview: buildPreview((row.body as string) ?? ""),
       }));
 
       return {
         notes,
-        total: totalCount,
+        total: rows.length > 0 ? Number(rows[0].total_count) : 0,
         page,
         perPage,
         sortKey: appliedSortKey,
@@ -721,6 +751,7 @@ function buildProjectsProvider(db: Pool): ProjectsDataProvider {
       const vals: unknown[] = [];
       let i = 1;
       if (updates.name !== undefined) { sets.push(`name = $${i++}`); vals.push(updates.name); }
+      if (updates.vector_search !== undefined) { sets.push(`vector_search = $${i++}`); vals.push(updates.vector_search); }
       if (!sets.length) return;
       vals.push(projectId);
       await db.query(`UPDATE projects SET ${sets.join(", ")} WHERE id = $${i}`, vals);
@@ -783,6 +814,139 @@ function buildBiosProvider(db: Pool): import("../types").BiosDataProvider {
   };
 }
 
+// ── Chunks provider ───────────────────────────────────────────────────────────
+
+function buildChunksProvider(db: Pool): ChunksDataProvider {
+  return {
+    async sync(noteId, projectId, chunks): Promise<ChunkSyncResult> {
+      const { rows: existingRows } = await db.query(
+        "SELECT chunk_index, content_hash FROM note_chunks WHERE note_id = $1",
+        [noteId]
+      );
+      const existing = new Map<number, string>(
+        (existingRows as { chunk_index: number; content_hash: string }[]).map((r) => [
+          r.chunk_index,
+          r.content_hash,
+        ])
+      );
+
+      const result: ChunkSyncResult = { inserted: 0, updated: 0, deleted: 0, unchanged: 0 };
+
+      for (const c of chunks) {
+        const prior = existing.get(c.chunkIndex);
+        if (prior === c.contentHash) {
+          result.unchanged++;
+          continue;
+        }
+        if (prior !== undefined) result.updated++;
+        else result.inserted++;
+
+        // The embedding is explicitly reset: an edited chunk must not keep the
+        // vector of text that no longer exists, or search matches content the
+        // note no longer contains. NULL is also what re-queues it for the drain.
+        await db.query(
+          `INSERT INTO note_chunks
+             (note_id, project_id, chunk_index, content, embed_text, content_hash,
+              token_count, embedding, model, dim, embedded_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,NULL,NULL,NULL)
+           ON CONFLICT (note_id, chunk_index) DO UPDATE SET
+             content      = EXCLUDED.content,
+             embed_text   = EXCLUDED.embed_text,
+             content_hash = EXCLUDED.content_hash,
+             token_count  = EXCLUDED.token_count,
+             embedding    = NULL,
+             model        = NULL,
+             dim          = NULL,
+             embedded_at  = NULL`,
+          [noteId, projectId, c.chunkIndex, c.content, c.embedText, c.contentHash, c.tokenCount]
+        );
+      }
+
+      const keep = chunks.map((c) => c.chunkIndex);
+      const { rowCount } = await db.query(
+        `DELETE FROM note_chunks
+          WHERE note_id = $1 AND NOT (chunk_index = ANY($2::int[]))`,
+        [noteId, keep]
+      );
+      result.deleted = rowCount ?? 0;
+
+      return result;
+    },
+
+    async notesToChunk(projectId, afterId, limit) {
+      const { rows } = await db.query(
+        `SELECT id, title, body, created_at FROM notes
+          WHERE project_id = $1 AND id > $2 ORDER BY id LIMIT $3`,
+        [projectId, afterId, limit]
+      );
+      return rows.map((r) => ({
+        id: r.id as number,
+        title: r.title as string,
+        body: r.body as string,
+        created_at:
+          r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at as string),
+      }));
+    },
+
+    async pending(limit, projectId): Promise<PendingChunk[]> {
+      const { rows } = projectId
+        ? await db.query(
+            `SELECT id, embed_text FROM note_chunks
+              WHERE embedding IS NULL AND project_id = $1 ORDER BY id LIMIT $2`,
+            [projectId, limit]
+          )
+        : await db.query(
+            `SELECT id, embed_text FROM note_chunks
+              WHERE embedding IS NULL ORDER BY id LIMIT $1`,
+            [limit]
+          );
+      return rows as PendingChunk[];
+    },
+
+    async writeEmbeddings(rows, model, dim): Promise<void> {
+      for (const r of rows) {
+        await db.query(
+          `UPDATE note_chunks
+              SET embedding = $1::vector, model = $2, dim = $3, embedded_at = now()
+            WHERE id = $4`,
+          [toVectorLiteral(r.embedding), model, dim, r.id]
+        );
+      }
+    },
+
+    async pendingCount(projectId): Promise<number> {
+      const { rows } = await db.query(
+        "SELECT COUNT(*) AS c FROM note_chunks WHERE project_id = $1 AND embedding IS NULL",
+        [projectId]
+      );
+      return Number(rows[0]?.c ?? 0);
+    },
+
+    async related(noteId, limit = 5): Promise<RelatedNote[]> {
+      const { rows } = await db.query(
+        "SELECT * FROM related_notes($1, $2, $3)",
+        [noteId, limit, embeddingModel()]
+      );
+      return rows.map((r) => ({
+        id: r.out_id as number,
+        title: r.out_title as string,
+        created_at:
+          r.out_created_at instanceof Date ? r.out_created_at.toISOString() : r.out_created_at,
+        score: Number(r.out_score),
+      }));
+    },
+
+    async clearEmbeddings(projectId): Promise<void> {
+      await db.query(
+        `UPDATE note_chunks
+            SET embedding = NULL, model = NULL, dim = NULL, embedded_at = NULL
+          WHERE project_id = $1`,
+        [projectId]
+      );
+    },
+  };
+}
+
 export function createGcpProvider(): DataProvider {
   const db = getPool();
   const storage = new Storage();
@@ -791,5 +955,6 @@ export function createGcpProvider(): DataProvider {
     notes: buildNotesProvider(db, storage),
     projects: buildProjectsProvider(db),
     bios: buildBiosProvider(db),
+    chunks: buildChunksProvider(db),
   };
 }

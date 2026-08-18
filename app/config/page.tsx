@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
+import { isEmbeddingConfigured } from "@/lib/embeddings";
 import Header from "@/components/Header";
 import ConfigForm from "@/components/ConfigForm";
 import { ArrowLeft } from "lucide-react";
@@ -24,6 +25,12 @@ export default async function ConfigPage({
 
   const activeProject = await provider.projects.getActive(user.id, sp.project);
   if (!activeProject) redirect("/");
+
+  // Drain-queue depth. A stalled drain degrades silently — search just goes
+  // stale — so the count is the observable that makes it noticeable.
+  const pendingChunks = activeProject.vector_search
+    ? await provider.chunks.pendingCount(activeProject.id).catch(() => 0)
+    : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -50,6 +57,8 @@ export default async function ConfigPage({
           settings={settings}
           userEmail={user.email}
           userId={user.id}
+          pendingChunks={pendingChunks}
+          embeddingConfigured={isEmbeddingConfigured()}
         />
       </div>
     </div>

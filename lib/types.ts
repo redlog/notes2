@@ -2,6 +2,8 @@ export interface Project {
   id: string;
   user_id: string;
   name: string;
+  /** Opt-in: embeds this project's notes with Voyage AI for semantic search. */
+  vector_search: boolean;
   created_at: string;
 }
 
@@ -72,12 +74,39 @@ export interface PersonCount {
   header_count: number;
 }
 
+export interface RelatedNote {
+  id: number;
+  title: string;
+  created_at: string;
+  /** Cosine similarity 0..1; higher is closer. */
+  score: number;
+}
+
+/** One chunk awaiting an embedding — the drain's unit of work. */
+export interface PendingChunk {
+  id: number;
+  embed_text: string;
+}
+
+export interface ChunkSyncResult {
+  inserted: number;
+  updated: number;
+  deleted: number;
+  unchanged: number;
+}
+
 export type SortKey = "created_at" | "updated_at" | "relevance";
 export type SortOrder = "asc" | "desc";
 
 export interface ListParams {
   projectId: string;
   search?: string;
+  /**
+   * Query embedding for hybrid search. When present the relevance path fuses
+   * lexical and semantic rankings with RRF; when absent it stays purely
+   * lexical. Callers embed the query — providers never call Voyage themselves.
+   */
+  queryEmbedding?: number[];
   filter?: string;
   page?: number;
   perPage?: number;
