@@ -10,6 +10,12 @@
 -- and filled in out of band by the drain (/api/embed-drain). A NULL embedding
 -- *is* the queue; see `note_chunks_pending_idx`.
 
+-- Resolve unqualified type names against both layouts. Supabase installs
+-- extensions into an `extensions` schema; a vanilla Postgres (and Cloud SQL)
+-- puts them in `public`. Naming a schema that does not exist is harmless —
+-- Postgres simply skips it — so this one line works for both.
+set search_path = public, extensions;
+
 create extension if not exists vector;
 
 -- ── Per-project opt-in ───────────────────────────────────────────────────────
@@ -114,7 +120,7 @@ returns table (
 language sql
 stable
 security invoker
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
   with q as (
     select
@@ -239,7 +245,7 @@ returns table (
 language sql
 stable
 security invoker
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
   with src as (
     select c.embedding, c.project_id
@@ -289,7 +295,7 @@ returns bigint
 language sql
 stable
 security invoker
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
   select count(*) from note_chunks
   where project_id = p_project_id and embedding is null;
