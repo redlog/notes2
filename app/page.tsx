@@ -98,6 +98,8 @@ export default async function HomePage({
       sk: sortKey,
       so: sortOrder,
       pv: bodyMode === "full" ? "2" : bodyMode === "preview" ? "1" : undefined,
+      time_min: timeMin,
+      time_max: timeMax,
       ...overrides,
     };
     Object.entries(merged).forEach(([k, v]) => { if (v) params.set(k, v); });
