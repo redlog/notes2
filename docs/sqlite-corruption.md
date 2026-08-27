@@ -50,6 +50,61 @@ rows than exist** — a person filter that quietly shows 435 of their 533 notes.
 `scripts/check-sqlite.mjs` checks for that too, by comparing each filter's
 result count against the same count read from a full table scan.
 
+## Data loss
+
+**Reading is safe. Writing is what loses data.** The corruption itself destroys
+nothing — an index holds no data of its own — but continuing to *edit* notes
+while the database is damaged does.
+
+`NotesDataProvider.save()` is not wrapped in a transaction, and
+`upsertTagsAndPeople()` rewrites a note's metadata as separate autocommitted
+statements:
+
+```
+DELETE FROM note_tags   WHERE note_id = ?   -- commits
+DELETE FROM note_people WHERE note_id = ?   -- commits
+INSERT INTO note_tags   …                   -- commits
+INSERT INTO note_people …                   -- raises SQLITE_CORRUPT
+```
+
+If any of the note's people hash onto the damaged index page, the deletes have
+already committed when the insert throws. Replaying `save()` against a damaged
+database, editing a note that mentions an affected person:
+
+| | before | after |
+|---|---|---|
+| body | `body 4 lorem` | `Edited body with new content` |
+| version | 1 | 2 |
+| people | `["Eve"]` | `[]` |
+| tags | `[]` | `["work"]` |
+| version snapshots | 0 | 0 |
+
+Three things go wrong at once:
+
+- **The note's people are gone.** Deleted and never restored.
+- **No version snapshot is recorded.** `save()` throws before
+  `recordNoteVersion()`, so there is no history entry to undo from.
+- **The save half-succeeded but reports failure.** The body and version were
+  already committed, so the editor shows an error for a save that did land.
+
+Tags survive, because they are re-inserted before the people loop.
+
+Notes that mention only unaffected people save normally, which is what makes
+this easy to miss.
+
+Corruption did not spread to table data across inserts, updates, cascading
+deletes and drain writes in testing — but writing into a damaged b-tree is not
+behaviour to lean on. Repair first.
+
+### What the checker cannot tell you
+
+The `NOT INDEXED` table scans prove the rows that are *there* are readable, and
+the rebuild compares per-table row counts before and after. Neither can detect
+rows that went missing *before* the check ran: if a page had been lost from a
+table's own b-tree, the scan would simply not see those rows and report a clean,
+smaller database. So after repairing, sanity-check the note count against what
+you expect rather than trusting "clean" alone.
+
 ## Diagnosing it
 
 ```bash

@@ -328,6 +328,12 @@ function main() {
   console.log(c.bold(`Checking ${file}`));
   console.log(c.dim(`  ${(fs.statSync(file).size / 1024 / 1024).toFixed(1)} MB`));
 
+  // --repair opens the database read-write (the FTS5 integrity-check needs it),
+  // so the backup is taken before anything can touch the file at all — not
+  // later, once a repair is known to be needed.
+  const saved = REPAIR ? backup(file) : null;
+  if (saved) console.log(c.dim(`  backed up to ${saved}`));
+
   const db = new Database(file, { readonly: !REPAIR });
 
   heading("PRAGMA quick_check / integrity_check");
@@ -427,7 +433,20 @@ function main() {
 
   console.log(`  ${c.yellow("Damage is confined to indexes.")}`);
   console.log("  Indexes hold no data of their own — they are derived from the tables,");
-  console.log("  and every table scans cleanly, so nothing has been lost.");
+  console.log("  and every table scans cleanly, so nothing has been lost yet.");
+
+  if (bad.length > 0) {
+    // Saving a note is not wrapped in a transaction: upsertTagsAndPeople()
+    // deletes the note's tags and people and then re-inserts them, so an
+    // insert that trips the damaged page leaves the delete committed and the
+    // note stripped of its metadata — and save() throws before it can record a
+    // version snapshot to undo from.
+    console.log(`\n  ${c.red("Do not edit notes until this is repaired.")}`);
+    console.log("  Saving a note rewrites its tags and people as separate statements,");
+    console.log("  so saving one that mentions an affected filter deletes that note's");
+    console.log("  people and then fails before restoring them — and records no version");
+    console.log("  snapshot. Reading is safe; writing is what loses data.");
+  }
 
   if (!REPAIR) {
     console.log(`\n  Stop the app, then re-run with ${c.bold("--repair")} to rebuild the file.`);
@@ -469,7 +488,6 @@ function main() {
   heading("Done");
   if (after.ok && stillBad.length === 0 && lost.length === 0) {
     // Only swap the files once the rebuild has been proven good.
-    const saved = backup(file);
     for (const suffix of ["-wal", "-shm"]) {
       if (fs.existsSync(file + suffix)) fs.unlinkSync(file + suffix);
     }
