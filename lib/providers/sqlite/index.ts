@@ -235,6 +235,42 @@ function setIntersect(a: Set<number>, b: Set<number>): Set<number> {
   return result;
 }
 
+/**
+ * Annotates SQLITE_CORRUPT with what to do about it.
+ *
+ * On its own, "database disk image is malformed" reads like an application
+ * bug rather than a damaged file, because damage confined to a single index
+ * only breaks the queries whose plan walks that index. A damaged
+ * `note_ppl_prsn_idx`, for instance, breaks filtering by the few people whose
+ * keys sit on the bad page and nothing else: the note list renders, the
+ * sidebar counts are right, and every other person filters fine. Naming the
+ * checker in the message saves that whole investigation next time.
+ */
+function withCorruptionHint<T extends object>(provider: T): T {
+  const hint =
+    " — the local SQLite database has a damaged page. Run " +
+    "`node scripts/check-sqlite.mjs` to see what is damaged, then " +
+    "`node scripts/check-sqlite.mjs --repair` to rebuild it.";
+
+  return new Proxy(provider, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== "function") return value;
+      return async (...args: unknown[]) => {
+        try {
+          return await (value as (...a: unknown[]) => unknown).apply(target, args);
+        } catch (err) {
+          const e = err as Error & { code?: string };
+          if (e?.code === "SQLITE_CORRUPT" && !e.message.includes("check-sqlite")) {
+            e.message += hint;
+          }
+          throw err;
+        }
+      };
+    },
+  });
+}
+
 function buildFtsQuery(search: string): string {
   return search
     .trim()
@@ -1483,9 +1519,9 @@ function buildChunksProvider(db: Database.Database): ChunksDataProvider {
 export function createSqliteProvider(): DataProvider {
   const db = getDb();
   return {
-    notes: buildNotesProvider(db),
-    projects: buildProjectsProvider(db),
-    bios: buildBiosProvider(db),
-    chunks: buildChunksProvider(db),
+    notes: withCorruptionHint(buildNotesProvider(db)),
+    projects: withCorruptionHint(buildProjectsProvider(db)),
+    bios: withCorruptionHint(buildBiosProvider(db)),
+    chunks: withCorruptionHint(buildChunksProvider(db)),
   };
 }
