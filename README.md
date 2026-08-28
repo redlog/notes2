@@ -271,6 +271,32 @@ Design notes and rationale: [`docs/vector-search-and-rag.md`](docs/vector-search
 | `node scripts/migrate-sqlite.mjs` | Migrate v1 notes → local SQLite |
 | `node scripts/migrate.mjs` | Migrate v1 notes → Supabase (cloud mode) |
 | `node scripts/check-sqlite.mjs` | Check the local database for corruption (`--repair` to fix) |
+| `node scripts/backfill-mentions.mjs` | Record `@person` / `#tag` mentions the v1 migration never read (`--apply` to write) |
+
+### Mentions missing on migrated notes
+
+`scripts/migrate-sqlite.mjs` imports v1 metadata from the `<!-- tags: -->` and
+`<!-- attendees: -->` header comments, and never reads the note body. The app
+derives mentions from the body on every save. So a note migrated from v1 and
+not saved since has any `@name` or `#tag` written in its body missing from
+`note_people` / `note_tags` — which means the `@` and `#` filters do not find
+it. `scripts/check-sqlite.mjs` reports these separately from real damage.
+
+```bash
+node scripts/backfill-mentions.mjs            # dry run; writes a plan, changes nothing
+node scripts/backfill-mentions.mjs --apply    # back up, then insert (stop the app first)
+```
+
+It inserts exactly what a save would, including the detail that a mention which
+is already a header person stays a single `is_header = 1` row rather than
+gaining a second one — the UNIQUE constraint allows both, and `getPersonCounts()`
+counts rows, so a second row would inflate that person's sidebar count.
+
+The dry run separates matches that came from text like `jack@acme.com` or
+`wiki/x#section`. Those are included by default because the app's own regexes
+match them and a later save would add them back; `--skip-embedded` leaves them
+out. Nothing needs re-indexing afterwards — tags and people are deliberately
+absent from the search index and the embedding text.
 
 ### Backups, and never putting the database in a synced folder
 
