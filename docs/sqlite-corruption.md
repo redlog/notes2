@@ -155,12 +155,39 @@ So `--repair` rebuilds the file instead:
    against the original) and only then swap the files, keeping the damaged
    original as `notes.db.<timestamp>.bak`.
 
-If a **table** scan fails, rows themselves are unreadable and no rebuild can
+Two cases need care, and the rebuild handles both explicitly rather than
+failing or dropping rows quietly:
+
+**Rows that violate the schema's own constraints.** A damaged unique index can
+let a duplicate through — `non-unique entry in index sqlite_autoindex_note_tags_1`.
+The destination table enforces the constraint, so one such row would otherwise
+abort the whole copy. The rebuild retries the table row by row, keeps one of
+each, and lists what it skipped (also written to `<db>.rejected.json`).
+
+**Rows whose id itself was damaged.** `Rowid … out of order` can mean a rowid
+was overwritten with one already in use. That row is *not* redundant —
+`{id: 1377, note_id: 1649, person: "jon"}` is a real association whose only
+problem is a colliding surrogate key. Where the id is a surrogate that nothing
+references, the row is re-inserted without it and SQLite assigns a fresh one, so
+the content survives. `notes.id` is excluded from this: image directories on
+disk are named after it and `note:<id>` links reference it, so a colliding note
+is reported rather than renumbered.
+
+A rejection on the `notes` table, or any row that goes missing without being
+reported, blocks the swap outright — the original is left untouched.
+
+Only if a **table scan** fails are rows genuinely unreadable, and no rebuild can
 invent them. The checker says so and stops, pointing at the sqlite3 CLI:
 
 ```bash
 sqlite3 local-data/notes.db ".recover" | sqlite3 local-data/notes.db.recovered
 ```
+
+Note that quick_check naming a *table* is not by itself that case.
+`Rowid … out of order` is a violated ordering invariant in the table's b-tree,
+and a full scan still returns every row — which is precisely what a rebuild
+fixes, by writing those rows into a fresh, correctly ordered tree. The table
+scans, not the pragma output, decide whether data is recoverable.
 
 ## How the file got damaged
 
@@ -168,9 +195,10 @@ Nothing in this codebase writes malformed pages — SQLite is not corrupted by
 ordinary application bugs. In practice the causes are environmental, and worth
 ruling out so it does not recur:
 
-- **The database on a file-syncing or network filesystem.** iCloud Drive,
-  Dropbox, OneDrive, Google Drive, NFS, SMB. This is the most common cause by
-  far. SQLite coordinates readers and writers through byte-range locks and the
+- **The database on a file-syncing or network filesystem.** OneDrive, iCloud
+  Drive, Dropbox, Google Drive, NFS, SMB. This is the most common cause by far,
+  and the one actually observed here — the damaged database lived under
+  `OneDrive - <org>\notes2\`. SQLite coordinates readers and writers through byte-range locks and the
   `-wal`/`-shm` sidecar files; a sync client that copies, relocates or
   materialises those files behind SQLite's back produces exactly this kind of
   localised page damage. `SQLITE_DB_PATH` defaults to `<cwd>/local-data/notes.db`,
