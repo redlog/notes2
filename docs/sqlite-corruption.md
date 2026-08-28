@@ -214,3 +214,24 @@ ruling out so it does not recur:
 
 If the database lives on local disk and is only ever opened by one app at a
 time, this should not recur. If it does, that points at the storage.
+
+### Keeping a copy in a synced folder anyway
+
+Pausing the sync client while the app runs does close the main hole, but it
+makes correctness depend on a ritual performed perfectly every time, and the
+failure is silent for weeks. It also leaves a real edge: after an unclean exit
+the main file can be nearly empty with everything sitting in the `-wal`
+sidecar, and the two are only meaningful as a matched pair.
+
+```
+.db  = 4096 bytes      ← after a kill: essentially empty
+-wal = 98912 bytes     ← every row lives here
+```
+
+Set `SQLITE_BACKUP_PATH` instead. The app snapshots the database with
+`VACUUM INTO` — hourly by default and again on clean exit — and the sync client
+only ever sees a finished file. Measured against a database taking ~66
+writes/second throughout, a snapshot came out fully consistent (equal counts
+across `notes`, `notes_fts` and `note_people`, no note missing its person row);
+it simply represents an earlier moment. A byte-for-byte copy under the same
+conditions is what produces the index/table disagreement above.

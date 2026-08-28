@@ -13,9 +13,9 @@
 
 import Database from "better-sqlite3";
 import { cookies } from "next/headers";
-import { mkdirSync } from "fs";
+import { mkdirSync, renameSync, rmSync, statSync } from "fs";
 import { unlink } from "fs/promises";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
 import { extractMentions, extractNoteRefs, buildPreview, exclusiveEnd } from "@/lib/notes";
 import { getLocalDbPath, getLocalImagesDir } from "@/lib/local-storage";
 import { cosineSimilarity, embeddingModel } from "@/lib/embeddings";
@@ -78,6 +78,40 @@ export function shutdownDb(): void {
   db.pragma("wal_checkpoint(TRUNCATE)");
   db.close();
   globalForDb.sqliteDb = undefined;
+}
+
+/**
+ * Writes a consistent snapshot of the database to `dest`.
+ *
+ * `VACUUM INTO` rather than a file copy, and the distinction is the whole
+ * point. Copying the file byte by byte while SQLite is writing to it yields a
+ * mix of old and new pages — a file that still opens, and whose indexes
+ * quietly disagree with its tables. That is not a hypothetical: it is how a
+ * database in this project was corrupted, by a sync client reading the file
+ * during a write (see `docs/sqlite-corruption.md`). `VACUUM INTO` runs inside
+ * a read transaction, so the snapshot is transactionally consistent even while
+ * the app is serving writes, and it needs no downtime to be safe.
+ *
+ * Written under a temporary name and renamed into place, so a snapshot
+ * interrupted halfway cannot replace a good backup with a truncated file that
+ * still looks like one. The rename is within the destination directory, which
+ * keeps it on one volume and therefore atomic.
+ */
+export function backupDb(dest: string): { bytes: number; ms: number } {
+  const source = getLocalDbPath();
+  if (resolve(dest) === resolve(source)) {
+    throw new Error(`Backup destination is the live database itself: ${dest}`);
+  }
+
+  mkdirSync(dirname(resolve(dest)), { recursive: true });
+  const tmp = `${dest}.tmp`;
+  rmSync(tmp, { force: true }); // a leftover from an interrupted run
+
+  const started = Date.now();
+  getDb().prepare("VACUUM INTO ?").run(tmp);
+  renameSync(tmp, dest);
+
+  return { bytes: statSync(dest).size, ms: Date.now() - started };
 }
 
 // ── Schema ────────────────────────────────────────────────────────────────────
