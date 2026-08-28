@@ -213,6 +213,55 @@ function duplicateRows(db) {
 }
 
 /**
+ * Finds notes whose body mentions a `@person` or `#tag` that is missing from
+ * note_people / note_tags.
+ *
+ * This is the one check that looks for damage a repair cannot undo. Saving a
+ * note deletes its tags and people and re-inserts them without a transaction
+ * (see docs/sqlite-corruption.md), so a save that tripped a damaged index left
+ * the delete committed and the re-insert unfinished. Those rows are simply
+ * gone; rebuilding the file cannot bring them back.
+ *
+ * The app derives mention metadata from the body on every save, so the body is
+ * an independent record of what should be there. The regexes mirror
+ * lib/notes.ts exactly — the question is whether the database agrees with what
+ * the app itself would have stored.
+ *
+ * Only mentions are checkable. People added through the editor's header field
+ * rather than written into the body leave no trace in the body, so a lost one
+ * is not detectable this way.
+ */
+function mentionConsistency(db) {
+  const PERSON_RE = /@([a-z0-9_-]+)/g; // mirrors lib/notes.ts
+  const TAG_RE = /#([a-z0-9_-]+)/g;
+
+  let notes, people, tags;
+  try {
+    notes = db.prepare("SELECT id, title, body FROM notes NOT INDEXED").all();
+    people = db.prepare("SELECT note_id, person FROM note_people NOT INDEXED").all();
+    tags = db.prepare("SELECT note_id, tag FROM note_tags NOT INDEXED").all();
+  } catch (err) {
+    return { error: `${err.code}: ${err.message}` };
+  }
+
+  const has = new Set(people.map((r) => `${r.note_id} ${r.person}`));
+  const hasTag = new Set(tags.map((r) => `${r.note_id} ${r.tag}`));
+
+  const missing = [];
+  for (const n of notes) {
+    const body = String(n.body ?? "");
+    const wantPeople = [...new Set([...body.matchAll(PERSON_RE)].map((m) => m[1]))];
+    const wantTags = [...new Set([...body.matchAll(TAG_RE)].map((m) => m[1]))];
+    const lostPeople = wantPeople.filter((p) => !has.has(`${n.id} ${p}`));
+    const lostTags = wantTags.filter((t) => !hasTag.has(`${n.id} ${t}`));
+    if (lostPeople.length || lostTags.length) {
+      missing.push({ id: n.id, title: n.title, people: lostPeople, tags: lostTags });
+    }
+  }
+  return { missing };
+}
+
+/**
  * Runs the real filter query for every distinct person and tag. This is what
  * turns "something is corrupt" into "filtering by @Frank is what breaks", and
  * it catches silent damage too: a damaged index page can also make SQLite
@@ -537,6 +586,27 @@ function main() {
     }
     if (dupes.length > 8) console.log(c.dim(`  … and ${dupes.length - 8} more`));
     console.log(c.dim("  A rebuild keeps one of each and reports the rest — see --repair."));
+  }
+
+  heading("Metadata the body says should exist");
+  const mentions = mentionConsistency(db);
+  if (mentions.error) {
+    console.log(`  ${c.red(mentions.error)}`);
+  } else if (mentions.missing.length === 0) {
+    console.log(`  ${c.green("every @person and #tag written in a note body is recorded")}`);
+  } else {
+    console.log(
+      `  ${c.red(`${mentions.missing.length} note(s) are missing metadata their body mentions:`)}`
+    );
+    for (const m of mentions.missing.slice(0, 10)) {
+      const lost = [...m.people.map((p) => `@${p}`), ...m.tags.map((t) => `#${t}`)].join(" ");
+      console.log(`    note ${m.id} ${c.dim(`"${m.title}"`)} → ${c.red(lost)}`);
+    }
+    if (mentions.missing.length > 10) {
+      console.log(c.dim(`    … and ${mentions.missing.length - 10} more`));
+    }
+    console.log(c.dim("  A rebuild cannot restore these — the rows are gone. Opening each"));
+    console.log(c.dim("  note and saving it re-derives them from the body."));
   }
 
   heading("Filter probes (every #tag and @person)");
