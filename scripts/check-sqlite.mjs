@@ -238,27 +238,40 @@ function mentionConsistency(db) {
   let notes, people, tags;
   try {
     notes = db.prepare("SELECT id, title, body FROM notes NOT INDEXED").all();
-    people = db.prepare("SELECT note_id, person FROM note_people NOT INDEXED").all();
-    tags = db.prepare("SELECT note_id, tag FROM note_tags NOT INDEXED").all();
+    people = db.prepare("SELECT note_id, person, is_header FROM note_people NOT INDEXED").all();
+    tags = db.prepare("SELECT note_id, tag, is_header FROM note_tags NOT INDEXED").all();
   } catch (err) {
     return { error: `${err.code}: ${err.message}` };
   }
 
-  const has = new Set(people.map((r) => `${r.note_id} ${r.person}`));
-  const hasTag = new Set(tags.map((r) => `${r.note_id} ${r.tag}`));
+  const has = new Set(people.map((r) => `${r.note_id}|${r.person}`));
+  const hasTag = new Set(tags.map((r) => `${r.note_id}|${r.tag}`));
 
-  const missing = [];
+  // Which notes the *save path* has ever processed — the difference between the
+  // two causes below. scripts/migrate-sqlite.mjs reads v1's
+  // `<!-- attendees: -->` header comment and stores those with is_header = 1;
+  // it never looks at body mentions. Only upsertTagsAndPeople() writes
+  // is_header = 0. So a note carrying no is_header = 0 row at all has never
+  // been saved through the app, and its missing mentions were never recorded
+  // rather than lost.
+  const saved = new Set([
+    ...people.filter((r) => r.is_header === 0).map((r) => r.note_id),
+    ...tags.filter((r) => r.is_header === 0).map((r) => r.note_id),
+  ]);
+
+  const neverRecorded = [];
+  const lost = [];
   for (const n of notes) {
     const body = String(n.body ?? "");
     const wantPeople = [...new Set([...body.matchAll(PERSON_RE)].map((m) => m[1]))];
     const wantTags = [...new Set([...body.matchAll(TAG_RE)].map((m) => m[1]))];
-    const lostPeople = wantPeople.filter((p) => !has.has(`${n.id} ${p}`));
-    const lostTags = wantTags.filter((t) => !hasTag.has(`${n.id} ${t}`));
-    if (lostPeople.length || lostTags.length) {
-      missing.push({ id: n.id, title: n.title, people: lostPeople, tags: lostTags });
-    }
+    const missPeople = wantPeople.filter((p) => !has.has(`${n.id}|${p}`));
+    const missTags = wantTags.filter((t) => !hasTag.has(`${n.id}|${t}`));
+    if (!missPeople.length && !missTags.length) continue;
+    const entry = { id: n.id, title: n.title, people: missPeople, tags: missTags };
+    (saved.has(n.id) ? lost : neverRecorded).push(entry);
   }
-  return { missing };
+  return { neverRecorded, lost };
 }
 
 /**
@@ -592,21 +605,36 @@ function main() {
   const mentions = mentionConsistency(db);
   if (mentions.error) {
     console.log(`  ${c.red(mentions.error)}`);
-  } else if (mentions.missing.length === 0) {
-    console.log(`  ${c.green("every @person and #tag written in a note body is recorded")}`);
   } else {
-    console.log(
-      `  ${c.red(`${mentions.missing.length} note(s) are missing metadata their body mentions:`)}`
-    );
-    for (const m of mentions.missing.slice(0, 10)) {
-      const lost = [...m.people.map((p) => `@${p}`), ...m.tags.map((t) => `#${t}`)].join(" ");
-      console.log(`    note ${m.id} ${c.dim(`"${m.title}"`)} → ${c.red(lost)}`);
+    const show = (list) => {
+      for (const m of list.slice(0, 8)) {
+        const what = [...m.people.map((p) => `@${p}`), ...m.tags.map((t) => `#${t}`)].join(" ");
+        console.log(`    note ${m.id} ${c.dim(`"${m.title}"`)} → ${what}`);
+      }
+      if (list.length > 8) console.log(c.dim(`    … and ${list.length - 8} more`));
+    };
+
+    if (mentions.lost.length === 0) {
+      console.log(`  ${c.green("no saved note is missing metadata its body mentions")}`);
+    } else {
+      // These notes have been through a save, so the app did extract their
+      // mentions once. Missing ones were deleted and not re-inserted.
+      console.log(`  ${c.red(`${mentions.lost.length} note(s) lost metadata a save should have kept:`)}`);
+      show(mentions.lost);
+      console.log(c.dim("  Opening each and saving it re-derives these from the body."));
     }
-    if (mentions.missing.length > 10) {
-      console.log(c.dim(`    … and ${mentions.missing.length - 10} more`));
+
+    if (mentions.neverRecorded.length > 0) {
+      // Not damage. Nothing to alarm anyone with.
+      console.log(
+        `\n  ${c.dim(`${mentions.neverRecorded.length} note(s) mention people or tags that were never recorded:`)}`
+      );
+      show(mentions.neverRecorded);
+      console.log(c.dim("  These have never been saved through the app. scripts/migrate-sqlite.mjs"));
+      console.log(c.dim("  imported v1's `<!-- attendees: -->` header only and never read body"));
+      console.log(c.dim("  mentions, so this is migration history rather than damage — but it does"));
+      console.log(c.dim("  mean @ and # filters do not find these notes."));
     }
-    console.log(c.dim("  A rebuild cannot restore these — the rows are gone. Opening each"));
-    console.log(c.dim("  note and saving it re-derives them from the body."));
   }
 
   heading("Filter probes (every #tag and @person)");
