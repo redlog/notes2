@@ -198,6 +198,8 @@ This is always the fallback if no cookie is set. You can rename it in Settings.
 | `PROVIDER` | No | *(Supabase mode)* | Set to `sqlite` to enable local mode |
 | `SQLITE_DB_PATH` | No | `<cwd>/local-data/notes.db` | Path to the SQLite database file |
 | `LOCAL_IMAGES_DIR` | No | Next to DB file in `images/` | Directory for image attachments |
+| `SQLITE_BACKUP_PATH` | No | — | Write a consistent snapshot of the database here. Safe to point at a synced folder |
+| `SQLITE_BACKUP_INTERVAL_SECONDS` | No | `3600` | How often to snapshot while running. `0` for on-exit only |
 | `NEXT_PUBLIC_SUPABASE_URL` | Cloud only | — | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Cloud only | — | Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Migration only | — | Used by `scripts/migrate.mjs` (Supabase migration) |
@@ -269,6 +271,37 @@ Design notes and rationale: [`docs/vector-search-and-rag.md`](docs/vector-search
 | `node scripts/migrate-sqlite.mjs` | Migrate v1 notes → local SQLite |
 | `node scripts/migrate.mjs` | Migrate v1 notes → Supabase (cloud mode) |
 | `node scripts/check-sqlite.mjs` | Check the local database for corruption (`--repair` to fix) |
+
+### Backups, and never putting the database in a synced folder
+
+**Do not keep the live database in OneDrive, Dropbox, iCloud Drive or Google
+Drive.** The sync client reads the file while the app is writing to it and
+stores a mix of old and new pages — a file that still opens, but whose indexes
+quietly disagree with its tables. That is the single most likely way to corrupt
+it.
+
+Keep the database on local disk and let the app write the snapshot instead:
+
+```bash
+SQLITE_DB_PATH=C:\Users\you\notes2-data\notes.db
+SQLITE_BACKUP_PATH=C:\Users\you\OneDrive\notes2\notes-backup.db
+```
+
+The snapshot is taken with `VACUUM INTO`, which runs inside a read transaction,
+so it is transactionally consistent even while the app is serving writes — no
+pausing, no stopping the app, no risk of a torn copy. It is written under a
+temporary name and renamed into place, so an interrupted backup cannot replace
+a good one with a truncated file. The sync client only ever sees a finished,
+closed file, which is what sync clients handle safely.
+
+It runs hourly by default *and* on clean exit. Both, deliberately: exit is the
+one moment that cannot be relied on, since a crash, a kill, a closed console
+window or a lost power cable skips it — and those are exactly the cases a
+backup exists for. A 100 MB database snapshots in about 250 ms.
+
+To restore, stop the app and copy the snapshot over `SQLITE_DB_PATH`. Image
+attachments live outside the database (`LOCAL_IMAGES_DIR`), so back that
+directory up too — it is ordinary files and safe to sync directly.
 
 ### `database disk image is malformed`
 
