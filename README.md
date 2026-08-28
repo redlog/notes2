@@ -268,3 +268,26 @@ Design notes and rationale: [`docs/vector-search-and-rag.md`](docs/vector-search
 | `npm run build` | Production build |
 | `node scripts/migrate-sqlite.mjs` | Migrate v1 notes → local SQLite |
 | `node scripts/migrate.mjs` | Migrate v1 notes → Supabase (cloud mode) |
+| `node scripts/check-sqlite.mjs` | Check the local database for corruption (`--repair` to fix) |
+
+### `database disk image is malformed`
+
+If a query fails with `SqliteError: database disk image is malformed`
+(`SQLITE_CORRUPT`), a page of the local database file is damaged. The symptom is
+often oddly narrow — filtering by *one* `@person` or `#tag` fails while
+everything else works — because damage confined to a single index only breaks
+the queries whose plan walks that index.
+
+```bash
+node scripts/check-sqlite.mjs            # diagnose; never writes
+node scripts/check-sqlite.mjs --repair   # rebuild the file (stop the app first)
+```
+
+The checker names the damaged object, proves whether the row data survived, and
+lists exactly which filters are affected — including ones that silently return
+*too few* results rather than raising. When the damage is limited to indexes,
+`--repair` rebuilds the database into a new file with the indexes built from
+scratch, keeping the damaged original as a `.bak` alongside it.
+
+See [`docs/sqlite-corruption.md`](docs/sqlite-corruption.md) for the full
+diagnosis and how the file gets damaged in the first place.
