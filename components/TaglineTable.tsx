@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronsUpDown, Pencil } from "lucide-react";
 
 export type TaglineRow = {
   noteId: number;
@@ -72,6 +72,7 @@ export default function TaglineTable({ rows }: { rows: TaglineRow[] }) {
               order={sortOrder}
               onClick={() => toggleSort("content")}
             />
+            <th className="px-3 py-2.5 font-medium w-16" />
           </tr>
         </thead>
         <tbody>
@@ -100,6 +101,15 @@ export default function TaglineTable({ rows }: { rows: TaglineRow[] }) {
                   className="note-body text-foreground/90"
                   dangerouslySetInnerHTML={{ __html: row.lineHtml }}
                 />
+              </td>
+              <td className="px-3 py-2.5 whitespace-nowrap text-right">
+                <Link
+                  href={`/edit/${row.noteId}`}
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </Link>
               </td>
             </tr>
           ))}
