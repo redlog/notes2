@@ -7,7 +7,7 @@
  * degrade to plain lexical search — never fail a request or a note save.
  */
 import type { DataProvider } from "./providers/types";
-import type { Project, SortKey } from "./types";
+import type { Project } from "./types";
 import { chunkNote } from "./chunking";
 import { embedQuery, isEmbeddingConfigured } from "./embeddings";
 
@@ -19,16 +19,18 @@ export function semanticEnabled(project: Pick<Project, "vector_search">): boolea
 /**
  * Embeds the search query, or returns undefined to stay lexical-only.
  *
- * Only meaningful on the relevance sort — the date sorts do not rank, so
- * spending a Voyage round trip on them would add latency for nothing.
+ * Deliberately *not* gated on the sort key. It was, on the reasoning that the
+ * date sorts do not rank so the Voyage round trip bought nothing — but the
+ * embedding does not only order results, it decides which notes match at all.
+ * Skipping it on a date sort dropped every semantic-only hit, so changing the
+ * sort silently changed the result set. Sorting is presentation; the match set
+ * is not. See docs/vector-search-and-rag.md §7.5.
  */
 export async function embedSearchQuery(
   project: Pick<Project, "vector_search">,
-  search: string,
-  sortKey: SortKey
+  search: string
 ): Promise<number[] | undefined> {
   if (!semanticEnabled(project)) return undefined;
-  if (sortKey !== "relevance") return undefined;
   if (!search.trim()) return undefined;
 
   try {

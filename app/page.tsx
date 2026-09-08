@@ -57,7 +57,11 @@ export default async function HomePage({
   // Embedded before the list query rather than inside the provider: the
   // providers never call Voyage themselves, so they stay testable without a
   // network, and a failure here simply yields undefined and lexical ranking.
-  const queryEmbedding = await embedSearchQuery(activeProject, search, sortKey);
+  //
+  // Not conditioned on `sortKey`: the embedding determines which notes match,
+  // not just their order, so withholding it on a date sort would hide the
+  // semantic-only hits and make the sort control look like it filters.
+  const queryEmbedding = await embedSearchQuery(activeProject, search);
 
   const [listResult, tagCounts, peopleCounts, earliestDate] = await Promise.all([
     provider.notes.list({

@@ -263,17 +263,39 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         }
       }
 
-      // ── Relevance path ────────────────────────────────────────────────────
+      // ── Search path ───────────────────────────────────────────────────────
       // Calls the same search_notes_ranked() function the Supabase provider
-      // uses (supabase/migrations/005 + 006) rather than reimplementing
+      // uses (supabase/migrations/005 + 006 + 007) rather than reimplementing
       // ts_rank_cd and the RRF fusion in SQL here. Cloud SQL is Postgres too,
       // so a second copy of the ranking logic would be exactly the kind of
       // per-provider divergence that left `relevance` broken for six months.
       //
+      // Every search goes through it, date sorts included: the function defines
+      // what a search matches and `p_sort_key` only chooses the order. When the
+      // date sorts ran their own lexical-only query below, changing the sort
+      // silently dropped every semantic-only hit.
+      //
+      // Named argument notation rather than positional: the argument list has
+      // grown twice and the tuning parameters in the middle
+      // (p_vector_limit/p_max_distance) are ones this caller wants to leave at
+      // their defaults.
+      //
       // Requires the migrations to have been applied to the Cloud SQL database.
-      if (useRelevance) {
+      if (search.trim() !== "") {
         const { rows } = await db.query(
-          `SELECT * FROM search_notes_ranked($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          `SELECT * FROM search_notes_ranked(
+             p_project_id      => $1,
+             p_search          => $2,
+             p_filter_ids      => $3,
+             p_time_min        => $4,
+             p_time_max        => $5,
+             p_sort_order      => $6,
+             p_limit           => $7,
+             p_offset          => $8,
+             p_query_embedding => $9,
+             p_model           => $10,
+             p_sort_key        => $11
+           )`,
           [
             projectId,
             search,
@@ -285,6 +307,7 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
             offset,
             queryEmbedding ? toVectorLiteral(queryEmbedding) : null,
             queryEmbedding ? embeddingModel() : null,
+            appliedSortKey,
           ]
         );
 
@@ -308,16 +331,14 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
         };
       }
 
-      // ── Date-sorted path ──────────────────────────────────────────────────
+      // ── Unsearched listing ────────────────────────────────────────────────
+      // Reached only without a search term — every search, whatever its sort,
+      // went through the RPC above. No text matching happens here, so there is
+      // no second copy of the match-set definition to drift from the first.
       const sqlVals: unknown[] = [projectId];
       const conditions: string[] = ["n.project_id = $1"];
       let pIdx = 2;
 
-      if (search) {
-        conditions.push(`n.search_vec @@ websearch_to_tsquery('english', $${pIdx})`);
-        sqlVals.push(search);
-        pIdx++;
-      }
       if (timeMin) { conditions.push(`n.created_at >= $${pIdx}`); sqlVals.push(timeMin); pIdx++; }
       if (endBound) { conditions.push(`n.created_at < $${pIdx}`); sqlVals.push(endBound); pIdx++; }
       if (filterIds !== null) {
