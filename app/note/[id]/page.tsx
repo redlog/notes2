@@ -10,8 +10,9 @@ import Header from "@/components/Header";
 import TagPill from "@/components/TagPill";
 import DeleteButton from "@/components/DeleteButton";
 import MoveNoteButton from "@/components/MoveNoteButton";
+import CloneNoteButton from "@/components/CloneNoteButton";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Calendar, Clock, Copy, History, Link2, Pencil, Sparkles } from "lucide-react";
+import { ArrowLeft, Calendar, Clock, History, Link2, Pencil, Sparkles } from "lucide-react";
 
 export async function generateMetadata({
   params,
@@ -133,12 +134,7 @@ export default async function ReadNotePage({
                     Edit
                   </Link>
                 </Button>
-                <Button asChild variant="outline" className="gap-1.5">
-                  <Link href={`/clone/${note.id}`}>
-                    <Copy className="h-3.5 w-3.5" />
-                    Clone
-                  </Link>
-                </Button>
+                <CloneNoteButton noteId={note.id} />
                 <Button asChild variant="outline" className="gap-1.5">
                   <Link href={`/note/${note.id}/history`}>
                     <History className="h-3.5 w-3.5" />

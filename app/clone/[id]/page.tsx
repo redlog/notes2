@@ -7,10 +7,11 @@ export default async function CloneNotePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ project?: string }>;
+  searchParams: Promise<{ project?: string; body?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
+  const includeBody = sp.body === "1";
   const noteId = Number(id);
   if (isNaN(noteId)) notFound();
 
@@ -30,7 +31,7 @@ export default async function CloneNotePage({
 
   const headerTags = note.tags.filter((t) => t.is_header).map((t) => t.tag);
   const headerPeople = note.people.filter((p) => p.is_header).map((p) => p.person);
-  const cloneBody = `note:${noteId}\n\n`;
+  const cloneBody = includeBody ? note.body : `note:${noteId}\n\n`;
 
   const newId = await provider.notes.create(
     activeProject.id,
