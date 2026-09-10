@@ -31,7 +31,8 @@ export default async function CloneNotePage({
 
   const headerTags = note.tags.filter((t) => t.is_header).map((t) => t.tag);
   const headerPeople = note.people.filter((p) => p.is_header).map((p) => p.person);
-  const cloneBody = includeBody ? note.body : `note:${noteId}\n\n`;
+  const backlink = `note:${noteId}\n\n`;
+  const cloneBody = includeBody ? `${backlink}${note.body}` : backlink;
 
   const newId = await provider.notes.create(
     activeProject.id,
