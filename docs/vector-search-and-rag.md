@@ -561,6 +561,56 @@ Shipped, and the assessment held: it is a single query, and it sits beside the
 inlinks panel in the note sidebar. One panel is the links you wrote, the other
 the ones you didn't. Highest value per line of code in this entire document.
 
+### 7.5 Sorting is presentation; the match set is not
+
+Hybrid search shipped as *the relevance sort*, which is a different thing from
+*search*, and the difference was visible to users within a day: run a query,
+get results under "sort by relevance", switch to "sort by date" — and some or
+all of them disappear.
+
+Three separate places encoded the same mistaken assumption that a date sort
+needs no embedding:
+
+- `embedSearchQuery()` returned `undefined` unless `sortKey === "relevance"`,
+  on the reasoning that the date sorts do not rank, so the Voyage round trip
+  bought nothing.
+- Both Postgres providers called `search_notes_ranked()` only on the relevance
+  path; their date sorts ran a separate `search_vec @@ …` query.
+- The SQLite provider gated its fusion on `useRelevance && queryEmbedding`.
+
+Each is defensible read on its own, and together they made the sort control
+into a filter. **The embedding does not only order results — it decides which
+notes match at all.** A note found by the semantic side and not the lexical one
+exists in the result set or it doesn't; that cannot depend on which column the
+user wants the rows sorted by. And the failure is worse than a wrong order: an
+empty page reads as "you have nothing about this", which is a false answer to
+the question the user actually asked.
+
+What shipped (migration `007_sort_independent_search.sql`):
+
+- The query is embedded whenever there is a search term, whatever the sort.
+- `search_notes_ranked()` gained `p_sort_key` and is now the single definition
+  of the match set for both Postgres providers — every search goes through it
+  and only the `ORDER BY` changes. The date-sorted queries that duplicated the
+  lexical predicate are gone, so there is no second definition left to drift.
+- SQLite computes the same fused candidate set and, on a date sort, re-orders
+  and paginates it by the column in SQL. Paginating the RRF order and then
+  sorting the page by date would have paginated the wrong list.
+- The score is returned on the date paths too. It is still the honest relevance
+  of that row against the query; whether to show it is the UI's call.
+
+Found while fixing this: SQLite's `vectorRanking()` never applied the date
+bounds — the Postgres `vec` CTE always had them, the JS brute-force scan did
+not. Invisible while the vector side only ran on the relevance sort in a corpus
+small enough not to hit the 50-candidate cap; a guaranteed bug report once date
+sorts started returning semantic hits. The bounds now apply inside the scan,
+before the cap, as they do in the RPC — filtering after the cap would let
+out-of-range notes consume candidate slots and push in-range ones out entirely.
+
+The general rule, worth applying to the next ranked feature: **a control that
+says "sort" must never change cardinality.** If changing it changes the number
+of results, it is a filter wearing a sort's label.
+
 ---
 
 ## 8. Exposing notes to Claude (MCP)

@@ -249,12 +249,18 @@ export async function listNotes(
     }
   }
 
-  // ── Relevance path ────────────────────────────────────────────────────────
+  // ── Search path ───────────────────────────────────────────────────────────
   // PostgREST cannot express `ORDER BY ts_rank_cd(...)`, so the ranked query
-  // lives in the search_notes_ranked() RPC (migration 005). It runs SECURITY
-  // INVOKER, so RLS still applies. All filter tokens have already been
+  // lives in the search_notes_ranked() RPC (migrations 005/006/007). It runs
+  // SECURITY INVOKER, so RLS still applies. All filter tokens have already been
   // resolved into `filterIds` above, so they pass through as a pre-filter.
-  if (useRelevance) {
+  //
+  // Every search goes through the RPC, including the date-sorted ones. It used
+  // to own the relevance sort alone, with the date sorts running their own
+  // lexical-only query below — which meant the sort control changed what the
+  // search matched, not just the order it came back in. The RPC is now the one
+  // definition of the match set and `p_sort_key` chooses the ordering.
+  if (search.trim() !== "") {
     const { data, error } = await supabase.rpc("search_notes_ranked", {
       p_project_id: projectId,
       p_search: search,
@@ -268,6 +274,9 @@ export async function listNotes(
       // which case the RPC stays purely lexical.
       p_query_embedding: queryEmbedding ? toVectorLiteral(queryEmbedding) : null,
       p_model: queryEmbedding ? embeddingModel() : null,
+      // 'relevance' only when there is something to rank; otherwise the same
+      // match set ordered by the requested date column.
+      p_sort_key: appliedSortKey,
     });
     if (error) throw error;
 
@@ -292,7 +301,10 @@ export async function listNotes(
     };
   }
 
-  // Build base query with search
+  // ── Unsearched listing ────────────────────────────────────────────────────
+  // Reached only when there is no search term — every search, whatever its
+  // sort, went through the RPC above. Nothing here matches text, so there is no
+  // second copy of the match-set definition to drift from the first.
   let query = supabase
     .from("notes")
     .select(
@@ -305,15 +317,6 @@ export async function listNotes(
 
   if (filterIds !== null) {
     query = query.in("id", filterIds);
-  }
-
-  if (search) {
-    // websearch_to_tsquery: supports quoted phrases, `or`, and -negation.
-    // Whole-word matching only — there is no partial-word fallback.
-    query = query.textSearch("search_vec", search, {
-      type: "websearch",
-      config: "english",
-    });
   }
 
   if (timeMin) query = query.gte("created_at", timeMin);

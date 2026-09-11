@@ -355,20 +355,33 @@ interface ChunkVecRow {
  * Both bounds matter. Cosine distance is defined for every stored chunk, so
  * without the threshold every note holding an embedding becomes a candidate and
  * a search returns the whole project ranked.
+ *
+ * The date bounds are applied *here*, before the cap, rather than to the fused
+ * result. Filtering afterwards would let out-of-range notes consume the 50
+ * candidate slots and push in-range ones out of the result entirely — and it is
+ * where the Postgres RPC applies them, which is the behaviour this mirrors.
  */
 function vectorRanking(
   db: Database.Database,
   projectId: string,
   queryEmbedding: number[],
   model: string,
-  allowedIds: number[] | null
+  allowedIds: number[] | null,
+  timeMin?: string,
+  timeMax?: string
 ): number[] {
+  const conditions = ["c.project_id = ?", "c.embedding IS NOT NULL", "c.model = ?"];
+  const values: unknown[] = [projectId, model];
+  if (timeMin) { conditions.push("n.created_at >= ?"); values.push(timeMin); }
+  if (timeMax) { conditions.push("n.created_at < ?");  values.push(exclusiveEnd(timeMax)); }
+
   const rows = db
     .prepare(
-      `SELECT note_id, embedding FROM note_chunks
-        WHERE project_id = ? AND embedding IS NOT NULL AND model = ?`
+      `SELECT c.note_id, c.embedding FROM note_chunks c
+         JOIN notes n ON n.id = c.note_id
+        WHERE ${conditions.join(" AND ")}`
     )
-    .all(projectId, model) as ChunkVecRow[];
+    .all(...values) as ChunkVecRow[];
 
   const best = new Map<number, number>();
   const allowed = allowedIds === null ? null : new Set(allowedIds);
@@ -690,13 +703,18 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
 
       let rows: NoteRow[];
       let total: number;
-      // Populated on both ranked paths; null on the date-sorted path, where
-      // there is no score to show.
+      // Populated whenever the query was ranked; null when there was nothing to
+      // rank against, where there is no score to show.
       let scoreById: Map<number, number> | null = null;
       // Most-negative bm25 across the whole match set, used to normalise.
       let bestScore = 0;
 
-      const useHybrid = useRelevance && !!queryEmbedding;
+      // The hybrid match set is computed whenever there is a search *and* a
+      // query embedding — the sort key does not enter into it. It used to be
+      // `useRelevance && queryEmbedding`, which made "sort by date" quietly run
+      // a lexical-only search and drop every semantic-only hit, so changing the
+      // sort looked like it was filtering results away.
+      const useHybrid = ftsQuery !== "" && !!queryEmbedding;
 
       if (useHybrid) {
         // ── Hybrid: lexical + semantic, fused with RRF ────────────────────
@@ -708,24 +726,24 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         const rankedWhere = ["notes_fts MATCH ?", ...restConditions].join(" AND ");
         const rankedValues = [ftsQuery, ...restValues];
 
-        const lexicalIds = ftsQuery
-          ? (
-              db
-                .prepare(
-                  `SELECT n.id FROM notes n JOIN notes_fts ON notes_fts.rowid = n.id
-                    WHERE ${rankedWhere}
-                    ORDER BY bm25(notes_fts) ASC, n.id DESC`
-                )
-                .all(...rankedValues) as { id: number }[]
-            ).map((r) => r.id)
-          : [];
+        const lexicalIds = (
+          db
+            .prepare(
+              `SELECT n.id FROM notes n JOIN notes_fts ON notes_fts.rowid = n.id
+                WHERE ${rankedWhere}
+                ORDER BY bm25(notes_fts) ASC, n.id DESC`
+            )
+            .all(...rankedValues) as { id: number }[]
+        ).map((r) => r.id);
 
         const semanticIds = vectorRanking(
           db,
           projectId,
           queryEmbedding!,
           embeddingModel(),
-          filterIds
+          filterIds,
+          timeMin,
+          timeMax
         );
 
         const fused = fuseRRF(lexicalIds, semanticIds);
@@ -734,9 +752,34 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
         const maxRrf = fused.length ? fused[0].rrf : 0;
         scoreById = new Map(fused.map((f) => [f.id, maxRrf > 0 ? f.rrf / maxRrf : 0]));
 
-        const pageIds = (dir === "ASC" ? [...fused].reverse() : fused)
-          .slice(offset, offset + perPage)
-          .map((f) => f.id);
+        // Bail before building the page query: neither side matched, and an
+        // empty id list would reach SQLite as `IN ()`, which is a syntax error.
+        if (fused.length === 0) {
+          return { notes: [], total, page, perPage, sortKey: appliedSortKey, sortOrder };
+        }
+
+        // Same rows either way; only the order differs. On a date sort the
+        // fused set is re-ordered by the column in SQL, which also has to be
+        // where pagination happens — slicing the RRF order and then sorting the
+        // slice by date would paginate the wrong list.
+        let pageIds: number[];
+        if (useRelevance) {
+          pageIds = (dir === "ASC" ? [...fused].reverse() : fused)
+            .slice(offset, offset + perPage)
+            .map((f) => f.id);
+        } else {
+          const fusedIds = fused.map((f) => f.id);
+          pageIds = (
+            db
+              .prepare(
+                `SELECT id FROM notes
+                  WHERE id IN (${fusedIds.map(() => "?").join(",")})
+                  ORDER BY ${dateSortKey} ${dir}, id DESC
+                  LIMIT ? OFFSET ?`
+              )
+              .all(...fusedIds, perPage, offset) as { id: number }[]
+          ).map((r) => r.id);
+        }
 
         if (pageIds.length === 0) {
           return { notes: [], total, page, perPage, sortKey: appliedSortKey, sortOrder };
@@ -749,7 +792,7 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
           )
           .all(...pageIds) as NoteRow[];
 
-        // Restore fused order — SQL returns rows in whatever order it likes.
+        // Restore the page order — SQL returns rows in whatever order it likes.
         const byId = new Map(fetched.map((r) => [r.id, r]));
         rows = pageIds.map((id) => byId.get(id)).filter(Boolean) as NoteRow[];
       } else if (useRelevance) {

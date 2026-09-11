@@ -2,6 +2,7 @@ import { getAuthUser } from "@/lib/auth";
 import { getProvider } from "@/lib/providers";
 import { extractNoteRefs } from "@/lib/notes";
 import { renderMarkdown } from "@/lib/markdown";
+import { embedSearchQuery } from "@/lib/semantic";
 import type { SortKey, SortOrder } from "@/lib/types";
 
 export async function GET(request: Request) {
@@ -22,6 +23,11 @@ export async function GET(request: Request) {
   const project = await provider.projects.getActive(user.id, projectId || undefined);
   if (!project) return new Response("Not found", { status: 404 });
 
+  // An export is meant to be the on-screen result set in a file. Without the
+  // query embedding the semantic-only matches would be missing from it, so the
+  // export would quietly disagree with the list it was exported from.
+  const queryEmbedding = await embedSearchQuery(project, search);
+
   const result = await provider.notes.list({
     projectId: project.id,
     search,
@@ -32,6 +38,7 @@ export async function GET(request: Request) {
     sortOrder,
     timeMin,
     timeMax,
+    queryEmbedding,
   });
 
   const rendered: { id: number; title: string; created_at: string; html: string }[] = [];
