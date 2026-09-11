@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import TagPill from "./TagPill";
 import type { NoteListItem } from "@/lib/types";
-import { Pencil, Copy, ChevronDown, ChevronUp, Calendar } from "lucide-react";
+import { Pencil, ChevronDown, ChevronUp, Calendar } from "lucide-react";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
+import CloneNoteButton from "./CloneNoteButton";
 
 interface Props {
   note: NoteListItem;
@@ -160,16 +161,7 @@ export default function NoteRow({
               <TooltipContent>Edit</TooltipContent>
             </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9 lg:h-7 lg:w-7" asChild>
-                  <Link href={`/clone/${note.id}`}>
-                    <Copy className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Clone</TooltipContent>
-            </Tooltip>
+            <CloneNoteButton noteId={note.id} iconOnly />
 
             {bodyMode !== "full" && (
               <Tooltip>
