@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import type { Project } from "@/lib/types";
 import Link from "next/link";
-import { Menu, Plus, Settings, LogOut, ChevronDown, User, LayoutGrid, Power } from "lucide-react";
+import { Menu, Plus, Settings, LogOut, ChevronDown, User, LayoutGrid, Power, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -22,9 +22,19 @@ interface Props {
   userEmail: string;
   localMode?: boolean;
   onMenuToggle?: () => void;
+  sidebarHidden?: boolean;
+  onSidebarToggle?: () => void;
 }
 
-export default function Header({ projects, activeProject, userEmail, localMode, onMenuToggle }: Props) {
+export default function Header({
+  projects,
+  activeProject,
+  userEmail,
+  localMode,
+  onMenuToggle,
+  sidebarHidden,
+  onSidebarToggle,
+}: Props) {
   const router = useRouter();
 
   async function signOut() {
@@ -60,6 +70,23 @@ export default function Header({ projects, activeProject, userEmail, localMode, 
           aria-label="Open sidebar"
         >
           <Menu className="h-5 w-5" />
+        </Button>
+
+        {/* Sidebar show/hide — desktop only */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden lg:inline-flex shrink-0"
+          onClick={onSidebarToggle}
+          title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+          aria-label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+          aria-pressed={sidebarHidden}
+        >
+          {sidebarHidden ? (
+            <PanelLeftOpen className="h-5 w-5" />
+          ) : (
+            <PanelLeftClose className="h-5 w-5" />
+          )}
         </Button>
 
         {/* Logo */}
