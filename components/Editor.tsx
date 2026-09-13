@@ -66,7 +66,7 @@ export default function Editor({
   const [personSuggestions, setPersonSuggestions] = useState<string[]>([]);
   const [tagSuggestionIndex, setTagSuggestionIndex] = useState(-1);
   const [personSuggestionIndex, setPersonSuggestionIndex] = useState(-1);
-  const [font, setFont] = useState<"mono" | "sans" | "serif">("mono");
+  const [font, setFont] = useState<"mono" | "sans" | "serif">("sans");
   const [metaOpen, setMetaOpen] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [mentionState, setMentionState] = useState<{
