@@ -61,33 +61,38 @@ export default function Header({
   return (
     <header className="sticky top-0 z-40 h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="flex h-full items-center gap-3 px-4">
-        {/* Hamburger — mobile only */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="lg:hidden shrink-0"
-          onClick={onMenuToggle}
-          aria-label="Open sidebar"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+        {/* Hamburger — mobile only. Only pages with a sidebar pass a handler;
+            elsewhere there is nothing to open, so the button stays out. */}
+        {onMenuToggle && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden shrink-0"
+            onClick={onMenuToggle}
+            aria-label="Open sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        )}
 
-        {/* Sidebar show/hide — desktop only */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="hidden lg:inline-flex shrink-0"
-          onClick={onSidebarToggle}
-          title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
-          aria-label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
-          aria-pressed={sidebarHidden}
-        >
-          {sidebarHidden ? (
-            <PanelLeftOpen className="h-5 w-5" />
-          ) : (
-            <PanelLeftClose className="h-5 w-5" />
-          )}
-        </Button>
+        {/* Sidebar show/hide — desktop only, same rule as the hamburger */}
+        {onSidebarToggle && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden lg:inline-flex shrink-0"
+            onClick={onSidebarToggle}
+            title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+            aria-label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+            aria-pressed={sidebarHidden}
+          >
+            {sidebarHidden ? (
+              <PanelLeftOpen className="h-5 w-5" />
+            ) : (
+              <PanelLeftClose className="h-5 w-5" />
+            )}
+          </Button>
+        )}
 
         {/* Logo */}
         <Link
