@@ -136,7 +136,27 @@ export default function Editor({
         );
         setJustSaved(true);
         setTimeout(() => setJustSaved(false), 2000);
+        // The note just changed in the database, but every RSC payload sitting
+        // in Next's client Router Cache — this route, /note/[id], the list —
+        // still describes the note as it was when those routes were last
+        // rendered. A soft navigation back here replays that snapshot instead of
+        // re-running the server component, so the editor re-mounts with the
+        // pre-save body and a pre-save `version` that the next PUT then rejects
+        // as a conflict. Back/forward reads the cache whatever staleTimes says,
+        // so no stale time tunes this away; refresh() invalidates the cache the
+        // way F5 does, minus the page load.
+        //
+        // Order matters: refresh() *before* push() is a no-op — the navigation
+        // aborts the refresh's in-flight RSC request and the stale entry
+        // survives. Navigate first, let the refresh land after.
+        //
+        // Autosave takes this path too: it writes to the database exactly like
+        // the Save button, so it leaves the cache exactly as stale. The editor
+        // is keyed on note.id alone (see app/edit/[id]/page.tsx), so the
+        // re-render this triggers delivers fresh props without re-mounting —
+        // anything typed during the save round-trip stays in the textarea.
         if (navigate) router.push(`/note/${note.id}`);
+        router.refresh();
       } else if (data.conflict) {
         setSaveStatus("⚠️ Conflict: modified elsewhere.");
         setAutoSave(false);
@@ -497,7 +517,13 @@ export default function Editor({
           noteId={note.id}
           images={images}
           signedUrls={signedUrls}
-          onImagesChange={(imgs, urls) => { setImages(imgs); setSignedUrls(urls); }}
+          onImagesChange={(imgs, urls) => {
+            setImages(imgs);
+            setSignedUrls(urls);
+            // Uploads and deletes hit the database on their own, outside doSave,
+            // so they stale the cached payloads the same way a save does.
+            router.refresh();
+          }}
         />
       </div>
 
