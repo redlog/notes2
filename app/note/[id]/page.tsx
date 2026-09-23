@@ -11,6 +11,7 @@ import TagPill from "@/components/TagPill";
 import DeleteButton from "@/components/DeleteButton";
 import MoveNoteButton from "@/components/MoveNoteButton";
 import CloneNoteButton from "@/components/CloneNoteButton";
+import ImageCarousel from "@/components/ImageCarousel";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Calendar, Clock, History, Link2, Pencil, Sparkles } from "lucide-react";
 
@@ -191,6 +192,11 @@ export default async function ReadNotePage({
               {note.images.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Images</p>
+                  <ImageCarousel
+                    images={note.images
+                      .filter((img) => signedImageUrls[img.img_num])
+                      .map((img) => ({ imgNum: img.img_num, url: signedImageUrls[img.img_num] }))}
+                  />
                   <div className="space-y-2">
                     {note.images.map((img) => {
                       const url = signedImageUrls[img.img_num];
