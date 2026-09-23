@@ -65,7 +65,16 @@ export default async function EditNotePage({
         userEmail={user.email}
         localMode={process.env.PROVIDER === "sqlite"}
       />
+      {/* Keyed on the note id so a soft navigation between two notes re-mounts
+          the editor. Header's "New" link goes /edit/<a> → /new → /edit/<b>
+          client-side, and every editor field is seeded once from props
+          (useState(note.body), useState(note.version), …); without the key React
+          would reuse the mounted instance and carry note <a>'s body and version
+          into note <b>. Deliberately not keyed on updated_at: doSave() calls
+          router.refresh(), and re-mounting on that would discard whatever was
+          typed while the save was in flight. */}
       <Editor
+        key={note.id}
         note={note}
         allTags={tagCounts.map((t) => t.tag)}
         allPeople={peopleCounts.map((p) => p.person)}
