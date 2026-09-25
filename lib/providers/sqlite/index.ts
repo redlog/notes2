@@ -1226,12 +1226,12 @@ function buildNotesProvider(db: Database.Database): NotesDataProvider {
     async getInlinks(noteId) {
       return db
         .prepare(
-          `SELECT ni.source_note_id, n.title AS note_title
+          `SELECT ni.source_note_id, n.title AS note_title, n.created_at AS note_created_at
            FROM note_inlinks ni
            JOIN notes n ON n.id = ni.source_note_id
            WHERE ni.target_note_id = ?`
         )
-        .all(noteId) as { source_note_id: number; note_title: string }[];
+        .all(noteId) as { source_note_id: number; note_title: string; note_created_at: string }[];
     },
 
     async getImageRecords(noteId): Promise<NoteImage[]> {

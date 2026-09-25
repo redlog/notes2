@@ -85,7 +85,7 @@ export interface NotesDataProvider {
   ): Promise<{ images: GalleryImage[]; total: number; page: number; perPage: number }>;
 
   // Inlinks (used by note view page)
-  getInlinks(noteId: number): Promise<{ source_note_id: number; note_title: string }[]>;
+  getInlinks(noteId: number): Promise<{ source_note_id: number; note_title: string; note_created_at: string }[]>;
 
   // Raw image record operations (used by upload/delete API routes)
   getImageRecords(noteId: number): Promise<NoteImage[]>;

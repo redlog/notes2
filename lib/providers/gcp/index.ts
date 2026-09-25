@@ -667,13 +667,18 @@ function buildNotesProvider(db: Pool, storage: Storage): NotesDataProvider {
 
     async getInlinks(noteId) {
       const { rows } = await db.query(
-        `SELECT ni.source_note_id, n.title AS note_title
+        `SELECT ni.source_note_id, n.title AS note_title, n.created_at AS note_created_at
          FROM note_inlinks ni
          JOIN notes n ON n.id = ni.source_note_id
          WHERE ni.target_note_id = $1`,
         [noteId]
       );
-      return rows as { source_note_id: number; note_title: string }[];
+      return rows.map((r) => ({
+        source_note_id: r.source_note_id as number,
+        note_title: r.note_title as string,
+        note_created_at:
+          r.note_created_at instanceof Date ? r.note_created_at.toISOString() : r.note_created_at,
+      }));
     },
 
     async getImageRecords(noteId) {

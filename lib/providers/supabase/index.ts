@@ -83,14 +83,15 @@ export async function createSupabaseProvider(): Promise<DataProvider> {
       getInlinks: async (noteId) => {
         const { data } = await supabase
           .from("note_inlinks")
-          .select("source_note_id, notes!source_note_id(id, title)")
+          .select("source_note_id, notes!source_note_id(id, title, created_at)")
           .eq("target_note_id", noteId);
         return ((data ?? []) as unknown as {
           source_note_id: number;
-          notes: { id: number; title: string };
+          notes: { id: number; title: string; created_at: string };
         }[]).map((r) => ({
           source_note_id: r.source_note_id,
           note_title: r.notes?.title ?? "",
+          note_created_at: r.notes?.created_at ?? "",
         }));
       },
 

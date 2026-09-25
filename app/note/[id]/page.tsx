@@ -85,6 +85,13 @@ export default async function ReadNotePage({
     });
   }
 
+  // Date only: the sidebar is too narrow for a full timestamp per list entry.
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleDateString(undefined, {
+      year: "numeric", month: "short", day: "numeric",
+    });
+  }
+
   const headerTags = note.tags.filter((t) => t.is_header);
   const headerPeople = note.people.filter((p) => p.is_header);
   const headerTagNames = new Set(headerTags.map((t) => t.tag));
@@ -237,6 +244,11 @@ export default async function ReadNotePage({
                         <span className="text-[10px] text-muted-foreground/60 shrink-0">
                           {r.score.toFixed(2)}
                         </span>
+                        {r.created_at && (
+                          <span className="text-[10px] text-muted-foreground shrink-0 ml-auto">
+                            {fmtDate(r.created_at)}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -252,13 +264,18 @@ export default async function ReadNotePage({
                   </p>
                   <ul className="space-y-1">
                     {inlinks.map((il) => (
-                      <li key={il.source_note_id}>
+                      <li key={il.source_note_id} className="flex items-baseline gap-1.5">
                         <Link
                           href={`/note/${il.source_note_id}`}
                           className="text-xs text-primary hover:underline"
                         >
                           {il.note_title}
                         </Link>
+                        {il.note_created_at && (
+                          <span className="text-[10px] text-muted-foreground shrink-0 ml-auto">
+                            {fmtDate(il.note_created_at)}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>
