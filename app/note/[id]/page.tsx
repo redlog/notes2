@@ -11,6 +11,7 @@ import TagPill from "@/components/TagPill";
 import DeleteButton from "@/components/DeleteButton";
 import MoveNoteButton from "@/components/MoveNoteButton";
 import CloneNoteButton from "@/components/CloneNoteButton";
+import PrintNoteButton from "@/components/PrintNoteButton";
 import ImageCarousel from "@/components/ImageCarousel";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Calendar, Clock, History, Link2, Pencil, Sparkles } from "lucide-react";
@@ -142,6 +143,7 @@ export default async function ReadNotePage({
                     History
                   </Link>
                 </Button>
+                <PrintNoteButton noteId={note.id} />
                 <MoveNoteButton noteId={note.id} currentProjectId={note.project_id} projects={projects} />
                 <DeleteButton noteId={note.id} />
               </div>
