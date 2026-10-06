@@ -356,6 +356,15 @@ export default function Editor({
         <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <Tag className="h-3.5 w-3.5 text-blue-500" />
           Tags
+          {tags.length > 0 && (
+            <button
+              onClick={() => setTags([])}
+              title="Remove all tags"
+              className="ml-auto font-normal normal-case tracking-normal text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {tags.map((tag) => (
@@ -436,6 +445,15 @@ export default function Editor({
         <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <Users className="h-3.5 w-3.5 text-violet-500" />
           People
+          {people.length > 0 && (
+            <button
+              onClick={() => setPeople([])}
+              title="Remove all people"
+              className="ml-auto font-normal normal-case tracking-normal text-muted-foreground hover:text-foreground"
+            >
+              Clear
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {people.map((person) => (
